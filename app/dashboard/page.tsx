@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-interface HabitStats {
-  habitId: string
-  habitName: string
+interface TaskStats {
+  taskId: string
+  taskName: string
   thisWeek: number
   currentStreak: number
   longestStreak: number
@@ -19,8 +19,9 @@ export default function Dashboard() {
     completedToday: 0,
     completedThisWeek: 0,
     completionRate: 0,
+    customTasksToday: 0,
   })
-  const [habitStats, setHabitStats] = useState<HabitStats[]>([])
+  const [taskStats, setTaskStats] = useState<TaskStats[]>([])
   const [dailyCompletion, setDailyCompletion] = useState<{ date: string; count: number }[]>([])
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -35,91 +36,102 @@ export default function Dashboard() {
       }
       setUser(authUser)
 
-      // Task stats
       const today = new Date().toISOString().split('T')[0]
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
+      // Task stats
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
 
-      const { data: todayTasks } = await supabase
-        .from('tasks')
+      const { data: todayLogs } = await supabase
+        .from('task_logs')
         .select('*')
         .eq('user_id', authUser.id)
-        .eq('scheduled_date', today)
+        .eq('date', today)
         .eq('completed', true)
 
-      const { data: weekTasks } = await supabase
-        .from('tasks')
+      const { data: weekLogs } = await supabase
+        .from('task_logs')
         .select('*')
         .eq('user_id', authUser.id)
-        .gte('scheduled_date', weekAgo)
+        .gte('date', weekAgo)
         .eq('completed', true)
 
-      const completedCount = allTasks?.filter(t => t.completed).length || 0
-      const totalCount = allTasks?.length || 0
+      const { data: allLogs } = await supabase
+        .from('task_logs')
+        .select('*')
+        .eq('user_id', authUser.id)
+
+      const completedCount = allLogs?.filter(l => l.completed).length || 0
+      const totalCount = allLogs?.length || 0
+      const customTodayCount = todayLogs?.filter(l => {
+        const task = allTasks?.find(t => t.id === l.task_id)
+        return !task?.is_template
+      }).length || 0
 
       setStats({
-        totalTasks: totalCount,
-        completedToday: todayTasks?.length || 0,
-        completedThisWeek: weekTasks?.length || 0,
+        totalTasks: allTasks?.length || 0,
+        completedToday: todayLogs?.length || 0,
+        completedThisWeek: weekLogs?.length || 0,
         completionRate: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
+        customTasksToday: customTodayCount,
       })
 
-      // Habit stats
+      // Task stats (templates only)
       const { data: templates } = await supabase
-        .from('habit_templates')
+        .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
+        .eq('is_template', true)
 
       if (templates && templates.length > 0) {
-        const habitStatsArray: HabitStats[] = []
+        const taskStatsArray: TaskStats[] = []
 
         for (const template of templates) {
           const { data: logs } = await supabase
-            .from('habit_logs')
+            .from('task_logs')
             .select('*')
             .eq('user_id', authUser.id)
-            .eq('habit_template_id', template.id)
+            .eq('task_id', template.id)
             .gte('date', weekAgo)
 
           const { data: streak } = await supabase
-            .from('habit_streaks')
+            .from('task_streaks')
             .select('*')
             .eq('user_id', authUser.id)
-            .eq('habit_template_id', template.id)
+            .eq('task_id', template.id)
             .single()
 
           const completedWeek = logs?.filter(l => l.completed).length || 0
 
-          habitStatsArray.push({
-            habitId: template.id,
-            habitName: template.name,
+          taskStatsArray.push({
+            taskId: template.id,
+            taskName: template.name,
             thisWeek: completedWeek,
             currentStreak: streak?.current_streak || 0,
             longestStreak: streak?.longest_streak || 0,
           })
         }
 
-        setHabitStats(habitStatsArray)
+        setTaskStats(taskStatsArray)
       }
 
       // Daily completion for last 7 days
       const last7Days = []
       for (let i = 6; i >= 0; i--) {
         const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-        const { data: dayTasks } = await supabase
-          .from('tasks')
+        const { data: dayLogs } = await supabase
+          .from('task_logs')
           .select('*')
           .eq('user_id', authUser.id)
-          .eq('scheduled_date', date)
+          .eq('date', date)
           .eq('completed', true)
 
         last7Days.push({
           date,
-          count: dayTasks?.length || 0,
+          count: dayLogs?.length || 0,
         })
       }
       setDailyCompletion(last7Days)
@@ -141,7 +153,7 @@ export default function Dashboard() {
         <Link href="/" style={{ color: '#3b82f6', textDecoration: 'none' }}>Back</Link>
       </div>
 
-      {/* Task stats */}
+      {/* Task Overview */}
       <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Task Overview</h2>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
         <StatCard label="Total tasks" value={stats.totalTasks} />
@@ -150,7 +162,26 @@ export default function Dashboard() {
         <StatCard label="Completion rate" value={stats.completionRate + '%'} />
       </div>
 
-      {/* Daily completion chart */}
+      {/* Custom Tasks Today */}
+      <div style={{
+        padding: '1rem',
+        background: '#f0fdf4',
+        border: '0.5px solid #bbf7d0',
+        borderRadius: '8px',
+        marginBottom: '2rem',
+      }}>
+        <div style={{ fontSize: '14px', fontWeight: '600', color: '#166534', marginBottom: '4px' }}>
+          📋 Custom tasks today
+        </div>
+        <div style={{ fontSize: '24px', fontWeight: '600', color: '#059669' }}>
+          {stats.customTasksToday}
+        </div>
+        <div style={{ fontSize: '12px', color: '#166534', marginTop: '4px' }}>
+          One-time tasks completed
+        </div>
+      </div>
+
+      {/* Daily Completion Chart */}
       <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Last 7 days</h2>
       <div style={{
         padding: '1.5rem',
@@ -179,14 +210,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Habit insights */}
-      {habitStats.length > 0 && (
+      {/* Template Task Insights */}
+      {taskStats.length > 0 && (
         <>
-          <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Habit Insights</h2>
+          <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Template Insights</h2>
           <div style={{ display: 'grid', gap: '12px', marginBottom: '2rem' }}>
-            {habitStats.map(habit => (
+            {taskStats.map(task => (
               <div
-                key={habit.habitId}
+                key={task.taskId}
                 style={{
                   padding: '1rem',
                   background: '#f9fafb',
@@ -194,26 +225,26 @@ export default function Dashboard() {
                   borderRadius: '8px',
                 }}
               >
-                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '0.5rem' }}>
-                  {habit.habitName}
+                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '0.75rem' }}>
+                  {task.taskName}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '12px' }}>
                   <div>
                     <div style={{ color: '#666', marginBottom: '2px' }}>This week</div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#3b82f6' }}>
-                      {habit.thisWeek}x
+                      {task.thisWeek}x
                     </div>
                   </div>
                   <div>
                     <div style={{ color: '#666', marginBottom: '2px' }}>Current streak</div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#059669' }}>
-                      {habit.currentStreak} days
+                      {task.currentStreak} days
                     </div>
                   </div>
                   <div>
                     <div style={{ color: '#666', marginBottom: '2px' }}>Best streak</div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#7c3aed' }}>
-                      {habit.longestStreak} days
+                      {task.longestStreak} days
                     </div>
                   </div>
                 </div>
@@ -224,7 +255,7 @@ export default function Dashboard() {
       )}
 
       <Link
-        href="/today"
+        href="/"
         style={{
           display: 'block',
           padding: '1rem',
@@ -235,10 +266,9 @@ export default function Dashboard() {
           color: '#0284c7',
           textDecoration: 'none',
           fontWeight: '500',
-          marginBottom: '1rem',
         }}
       >
-        Quick add today's habits
+        Back to tasks
       </Link>
     </div>
   )

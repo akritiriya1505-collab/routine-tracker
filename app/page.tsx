@@ -9,38 +9,34 @@ import Link from 'next/link'
 interface Task {
   id: string
   name: string
-  scheduled_date: string
-  completed: boolean
-}
-
-interface HabitTemplate {
-  id: string
-  name: string
   category: string
+  is_template: boolean
 }
 
-interface HabitLog {
-  habit_template_id: string
+interface TaskLog {
+  task_id: string
   completed: boolean
   count: number
 }
 
-interface HabitStreak {
-  habit_template_id: string
+interface TaskStreak {
+  task_id: string
   current_streak: number
+  longest_streak: number
 }
 
 export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [habits, setHabits] = useState<HabitTemplate[]>([])
-  const [habitLogs, setHabitLogs] = useState<HabitLog[]>([])
-  const [streaks, setStreaks] = useState<{ [key: string]: number }>({})
+  const [todayTasks, setTodayTasks] = useState<(Task & TaskLog)[]>([])
+  const [templates, setTemplates] = useState<Task[]>([])
+  const [taskLogs, setTaskLogs] = useState<TaskLog[]>([])
+  const [streaks, setStreaks] = useState<{ [key: string]: TaskStreak }>({})
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [taskName, setTaskName] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [waterIntake, setWaterIntake] = useState(0)
-  const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0 })
+  const [searchInput, setSearchInput] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const [filteredTasks, setFilteredTasks] = useState<Task[]>([])
+  const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0, customTodayCount: 0 })
+  const [waterCount, setWaterCount] = useState(0)
   const router = useRouter()
 
   useEffect(() => {
@@ -55,64 +51,74 @@ export default function Home() {
       const today = new Date().toISOString().split('T')[0]
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      // Fetch today's tasks
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .eq('scheduled_date', today)
-        .order('created_at', { ascending: true })
-      setTasks(tasksData || [])
-
-      // Fetch habit templates
-      const { data: habitsData } = await supabase
-        .from('habit_templates')
-        .select('*')
-        .eq('user_id', authUser.id)
-      setHabits(habitsData || [])
-
-      // Fetch today's habit logs
-      const { data: logsData } = await supabase
-        .from('habit_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .eq('date', today)
-      setHabitLogs(logsData || [])
-
-      // Fetch streaks
-      const { data: streaksData } = await supabase
-        .from('habit_streaks')
-        .select('*')
-        .eq('user_id', authUser.id)
-      
-      const streakMap: { [key: string]: number } = {}
-      streaksData?.forEach((s: any) => {
-        streakMap[s.habit_template_id] = s.current_streak || 0
-      })
-      setStreaks(streakMap)
-
-      // Get water intake
-      const waterLog = logsData?.find((l: any) => {
-        return habitsData?.some((h: any) => h.id === l.habit_template_id && h.name.toLowerCase().includes('water'))
-      })
-      setWaterIntake(waterLog?.count || 0)
-
-      // Get stats
+      // Fetch all tasks (both template and custom)
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
+      setTemplates(allTasks?.filter(t => t.is_template) || [])
 
-      const { data: weekTasks } = await supabase
+      // Fetch today's task logs
+      const { data: logsData } = await supabase
+        .from('task_logs')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .eq('date', today)
+      setTaskLogs(logsData || [])
+
+      // Combine tasks with logs for today
+      if (allTasks && logsData) {
+        const combined = logsData.map(log => {
+          const task = allTasks.find(t => t.id === log.task_id)
+          return { ...task, ...log } as Task & TaskLog
+        })
+        setTodayTasks(combined)
+      }
+
+      // Fetch streaks
+      const { data: streaksData } = await supabase
+        .from('task_streaks')
+        .select('*')
+        .eq('user_id', authUser.id)
+
+      const streakMap: { [key: string]: TaskStreak } = {}
+      streaksData?.forEach((s: any) => {
+        streakMap[s.task_id] = {
+          task_id: s.task_id,
+          current_streak: s.current_streak || 0,
+          longest_streak: s.longest_streak || 0,
+        }
+      })
+      setStreaks(streakMap)
+
+      // Get stats
+      const { data: allTasksData } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
-        .gte('scheduled_date', weekAgo)
+
+      const { data: weekLogsData } = await supabase
+        .from('task_logs')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .gte('date', weekAgo)
         .eq('completed', true)
 
+      const customTodayCount = logsData?.filter(l => {
+        const task = allTasks?.find(t => t.id === l.task_id)
+        return !task?.is_template && l.completed
+      }).length || 0
+
+      const waterLog = logsData?.find((l: any) => {
+        const task = allTasks?.find(t => t.id === l.task_id && t.name.toLowerCase().includes('water'))
+        return task
+      })
+
+      setWaterCount(waterLog?.count || 0)
       setStats({
-        totalTasks: allTasks?.length || 0,
-        completedThisWeek: weekTasks?.length || 0,
+        totalTasks: allTasksData?.length || 0,
+        completedThisWeek: weekLogsData?.length || 0,
+        customTodayCount,
       })
 
       setLoading(false)
@@ -121,91 +127,138 @@ export default function Home() {
     init()
   }, [router])
 
-  const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!taskName.trim() || !user) return
+  useEffect(() => {
+    if (searchInput.trim()) {
+      const filtered = templates.filter(t =>
+        t.name.toLowerCase().includes(searchInput.toLowerCase())
+      )
+      setFilteredTasks(filtered)
+    } else {
+      setFilteredTasks([])
+    }
+  }, [searchInput, templates])
+
+  const handleAddTask = async (taskId?: string, isCustom: boolean = false) => {
+    if (!user) return
 
     const today = new Date().toISOString().split('T')[0]
-    const { error } = await supabase.from('tasks').insert({
-      user_id: user.id,
-      name: taskName.trim(),
-      scheduled_date: today,
-    })
 
-    if (!error) {
-      setTaskName('')
-      setShowForm(false)
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('scheduled_date', today)
-      setTasks(tasksData || [])
+    if (isCustom && taskId === 'new') {
+      // Create custom task
+      const { data: newTask } = await supabase.from('tasks').insert({
+        user_id: user.id,
+        name: searchInput.trim(),
+        is_template: false,
+      }).select().single()
+
+      if (newTask) {
+        const { error } = await supabase.from('task_logs').insert({
+          user_id: user.id,
+          task_id: newTask.id,
+          date: today,
+          completed: false,
+        })
+
+        if (!error) {
+          setSearchInput('')
+          setShowSearch(false)
+          // Refresh today's tasks
+          const { data: logsData } = await supabase
+            .from('task_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('date', today)
+
+          const { data: allTasks } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('user_id', user.id)
+
+          if (allTasks && logsData) {
+            const combined = logsData.map(log => {
+              const task = allTasks.find(t => t.id === log.task_id)
+              return { ...task, ...log } as Task & TaskLog
+            })
+            setTodayTasks(combined)
+          }
+        }
+      }
+    } else if (taskId) {
+      // Add existing template
+      const { error } = await supabase.from('task_logs').upsert({
+        user_id: user.id,
+        task_id: taskId,
+        date: today,
+        completed: false,
+      }, {
+        onConflict: 'user_id,task_id,date'
+      })
+
+      if (!error) {
+        setSearchInput('')
+        setShowSearch(false)
+        // Refresh
+        const { data: logsData } = await supabase
+          .from('task_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('date', today)
+
+        const { data: allTasks } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', user.id)
+
+        if (allTasks && logsData) {
+          const combined = logsData.map(log => {
+            const task = allTasks.find(t => t.id === log.task_id)
+            return { ...task, ...log } as Task & TaskLog
+          })
+          setTodayTasks(combined)
+        }
+      }
     }
   }
 
   const toggleTask = async (taskId: string, completed: boolean) => {
     const { error } = await supabase
-      .from('tasks')
+      .from('task_logs')
       .update({ completed })
-      .eq('id', taskId)
+      .eq('task_id', taskId)
+      .eq('user_id', user.id)
 
     if (!error) {
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed } : t))
-    }
-  }
-
-  const toggleHabit = async (habitId: string, completed: boolean) => {
-    if (!user) return
-
-    const today = new Date().toISOString().split('T')[0]
-
-    const { error } = await supabase.from('habit_logs').upsert({
-      user_id: user.id,
-      habit_template_id: habitId,
-      date: today,
-      completed,
-    }, {
-      onConflict: 'user_id,habit_template_id,date'
-    })
-
-    if (!error) {
-      setHabitLogs(prev => {
-        const existing = prev.find(l => l.habit_template_id === habitId)
-        if (existing) {
-          return prev.map(l =>
-            l.habit_template_id === habitId ? { ...l, completed } : l
-          )
-        }
-        return [...prev, { habit_template_id: habitId, completed, count: 0 }]
-      })
+      setTodayTasks(prev =>
+        prev.map(t => t.task_id === taskId ? { ...t, completed } : t)
+      )
     }
   }
 
   const addWater = async () => {
     if (!user) return
 
-    const waterHabit = habits.find(h => h.name.toLowerCase().includes('water'))
-    if (!waterHabit) {
-      alert('Please create a "Water" habit first')
+    const today = new Date().toISOString().split('T')[0]
+    const waterTask = templates.find(t => t.name.toLowerCase().includes('water'))
+
+    if (!waterTask) {
+      alert('Create a "Water" task first in Templates')
       return
     }
 
-    const newCount = waterIntake + 1
-    const today = new Date().toISOString().split('T')[0]
+    const newCount = waterCount + 1
 
-    const { error } = await supabase.from('habit_logs').upsert({
+    const { error } = await supabase.from('task_logs').upsert({
       user_id: user.id,
-      habit_template_id: waterHabit.id,
+      task_id: waterTask.id,
       date: today,
       completed: newCount >= 8,
       count: newCount,
     }, {
-      onConflict: 'user_id,habit_template_id,date'
+      onConflict: 'user_id,task_id,date'
     })
 
     if (!error) {
-      setWaterIntake(newCount)
+      setWaterCount(newCount)
     }
   }
 
@@ -216,8 +269,7 @@ export default function Home() {
 
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
-  const completedTasks = tasks.filter(t => t.completed).length
-  const completedHabits = habitLogs.filter(l => l.completed).length
+  const completedTasks = todayTasks.filter(t => t.completed).length
   const today = new Date().toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
@@ -231,115 +283,128 @@ export default function Home() {
       </div>
 
       {/* Navigation */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '2rem', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '2rem' }}>
         <Link href="/calendar" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
           Calendar
         </Link>
-        <Link href="/today" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Habits
-        </Link>
-        <Link href="/water" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Water
+        <Link href="/templates" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
+          Templates
         </Link>
         <Link href="/dashboard" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
           Stats
         </Link>
-        <Link href="/habits" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Templates
-        </Link>
       </div>
 
-      {/* Today's Date & Progress */}
+      {/* Date & Progress */}
       <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', marginBottom: '2rem', textAlign: 'center' }}>
         <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>{today}</div>
         <div style={{ fontSize: '12px', color: '#666' }}>
-          {completedTasks + completedHabits} of {tasks.length + habitLogs.length} completed
+          {completedTasks} of {todayTasks.length} completed
+        </div>
+        <div style={{
+          width: '100%',
+          height: '6px',
+          background: '#e5e7eb',
+          borderRadius: '3px',
+          overflow: 'hidden',
+          marginTop: '0.5rem',
+        }}>
+          <div style={{
+            height: '100%',
+            background: '#059669',
+            width: todayTasks.length > 0 ? `${(completedTasks / todayTasks.length) * 100}%` : '0%',
+          }} />
         </div>
       </div>
 
-      {/* Stats Row */}
+      {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Total tasks</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{stats.totalTasks}</div>
+          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Total</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{todayTasks.length}</div>
         </div>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
           <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>This week</div>
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{stats.completedThisWeek}</div>
         </div>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Habits</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{habits.length}</div>
+          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Templates</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{templates.length}</div>
         </div>
       </div>
 
       {/* Today's Tasks */}
       <div style={{ marginBottom: '2rem' }}>
         <h2 style={{ fontSize: '14px', color: '#666', margin: '0 0 1rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
-          Today's schedule ({completedTasks}/{tasks.length})
+          Today's tasks
         </h2>
 
-        {tasks.length === 0 ? (
-          <p style={{ color: '#999', fontSize: '13px', marginBottom: '1rem' }}>No tasks today</p>
+        {todayTasks.length === 0 ? (
+          <p style={{ color: '#999', fontSize: '13px', marginBottom: '1rem' }}>No tasks yet</p>
         ) : (
-          tasks.map(task => (
-            <div
-              key={task.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '1rem',
-                background: task.completed ? '#f0fdf4' : '#f9fafb',
-                border: '0.5px solid #e5e7eb',
-                borderRadius: '8px',
-                marginBottom: '8px',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={task.completed}
-                onChange={e => toggleTask(task.id, e.target.checked)}
-                style={{ width: '20px', height: '20px', cursor: 'pointer' }}
-              />
-              <span style={{
-                flex: 1,
-                fontWeight: '500',
-                fontSize: '14px',
-                textDecoration: task.completed ? 'line-through' : 'none',
-                color: task.completed ? '#999' : '#000',
-              }}>
-                {task.name}
-              </span>
-            </div>
-          ))
+          todayTasks.map(task => {
+            const streak = streaks[task.task_id]
+            return (
+              <div
+                key={task.task_id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '1rem',
+                  background: task.completed ? '#f0fdf4' : '#f9fafb',
+                  border: '0.5px solid #e5e7eb',
+                  borderRadius: '8px',
+                  marginBottom: '8px',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={task.completed}
+                  onChange={e => toggleTask(task.task_id, e.target.checked)}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{task.name}</div>
+                  <div style={{ fontSize: '11px', color: '#666' }}>{task.category || 'custom'}</div>
+                </div>
+                {streak && streak.current_streak > 0 && (
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#059669' }}>
+                    {streak.current_streak}d
+                  </span>
+                )}
+              </div>
+            )
+          })
         )}
+      </div>
 
-        <button
-          onClick={() => setShowForm(!showForm)}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            background: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '500',
-            marginTop: '1rem',
-          }}
-        >
-          {showForm ? 'Cancel' : '+ Add task'}
-        </button>
-
-        {showForm && (
-          <form onSubmit={handleCreateTask} style={{ marginTop: '1rem' }}>
+      {/* Smart Add Task */}
+      <div style={{ marginBottom: '2rem' }}>
+        {!showSearch ? (
+          <button
+            onClick={() => setShowSearch(true)}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              background: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            + Add task
+          </button>
+        ) : (
+          <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px' }}>
             <input
               type="text"
-              value={taskName}
-              onChange={e => setTaskName(e.target.value)}
-              placeholder="Task name..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="Search or create..."
               autoFocus
               style={{
                 width: '100%',
@@ -350,79 +415,91 @@ export default function Home() {
                 marginBottom: '0.5rem',
               }}
             />
+
+            {/* Results */}
+            {filteredTasks.length > 0 && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                {filteredTasks.map(task => (
+                  <button
+                    key={task.id}
+                    onClick={() => handleAddTask(task.id)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: '#eff6ff',
+                      border: '0.5px solid #bfdbfe',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      textAlign: 'left',
+                      marginBottom: '4px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span>{task.name}</span>
+                    {streaks[task.id] && (
+                      <span style={{ fontSize: '11px', color: '#059669', fontWeight: '600' }}>
+                        {streaks[task.id].current_streak}d
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Create Custom */}
+            {searchInput.trim().length > 0 && (
+              <button
+                onClick={() => handleAddTask('new', true)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  background: '#dcfce7',
+                  border: '0.5px solid #bbf7d0',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  color: '#166534',
+                  fontWeight: '500',
+                  marginBottom: '0.5rem',
+                }}
+              >
+                + Create custom: {searchInput.trim()}
+              </button>
+            )}
+
             <button
-              type="submit"
+              onClick={() => {
+                setShowSearch(false)
+                setSearchInput('')
+              }}
               style={{
                 width: '100%',
                 padding: '0.75rem',
-                background: '#059669',
-                color: 'white',
-                border: 'none',
+                background: '#fee2e2',
+                border: '0.5px solid #fecaca',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500',
+                fontSize: '13px',
+                color: '#991b1b',
               }}
             >
-              Create
+              Cancel
             </button>
-          </form>
+          </div>
         )}
       </div>
 
-      {/* Today's Habits */}
-      {habits.length > 0 && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '14px', color: '#666', margin: '0 0 1rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
-            Today's habits ({completedHabits}/{habits.length})
-          </h2>
-
-          {habits.map(habit => {
-            const log = habitLogs.find(l => l.habit_template_id === habit.id)
-            const streak = streaks[habit.id] || 0
-            return (
-              <div
-                key={habit.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '1rem',
-                  background: log?.completed ? '#f0fdf4' : '#f9fafb',
-                  border: '0.5px solid #e5e7eb',
-                  borderRadius: '8px',
-                  marginBottom: '8px',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={log?.completed || false}
-                  onChange={e => toggleHabit(habit.id, e.target.checked)}
-                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{habit.name}</div>
-                  <div style={{ fontSize: '11px', color: '#666' }}>{habit.category}</div>
-                </div>
-                {streak > 0 && (
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#059669' }}>
-                    {streak}d
-                  </span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Water Tracker Quick */}
-      {habits.some(h => h.name.toLowerCase().includes('water')) && (
+      {/* Water Quick Tracker */}
+      {templates.some(t => t.name.toLowerCase().includes('water')) && (
         <div style={{ marginBottom: '2rem', padding: '1rem', background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: '8px' }}>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '1rem', color: '#0284c7' }}>Water intake</div>
+          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '1rem', color: '#0284c7' }}>💧 Water intake</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-            <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{waterIntake}/8</div>
+            <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{waterCount}/8</div>
             <div style={{ flex: 1, height: '8px', background: '#dbeafe', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: '#3b82f6', width: `${(waterIntake / 8) * 100}%` }} />
+              <div style={{ height: '100%', background: '#3b82f6', width: `${(waterCount / 8) * 100}%` }} />
             </div>
           </div>
           <button

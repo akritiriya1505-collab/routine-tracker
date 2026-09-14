@@ -368,7 +368,7 @@ export default function Home() {
       setSearchInput('')
       setShowSearch(false)
       // Refetch data
-      await fetchDateData(user.id, selectedDate, waterTaskId)
+      await fetchDateData(user.id, selectedDate, waterTaskId, templates)
     }
   }
 

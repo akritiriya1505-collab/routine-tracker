@@ -221,16 +221,98 @@ export default function Home() {
   }
 
   const toggleTask = async (taskId: string, completed: boolean) => {
+    const today = new Date().toISOString().split('T')[0]
+    
     const { error } = await supabase
       .from('task_logs')
       .update({ completed })
       .eq('task_id', taskId)
       .eq('user_id', user.id)
+      .eq('date', today)
 
     if (!error) {
       setTodayTasks(prev =>
         prev.map(t => t.task_id === taskId ? { ...t, completed } : t)
       )
+
+      // Update streak if it's a template task
+      const task = todayTasks.find(t => t.task_id === taskId)
+      if (task && task.is_template) {
+        await updateStreak(taskId, completed)
+      }
+    }
+  }
+
+  const updateStreak = async (taskId: string, completed: boolean) => {
+    const today = new Date().toISOString().split('T')[0]
+
+    if (!completed) {
+      // Task unchecked - reset streak to 0
+      const { error } = await supabase
+        .from('task_streaks')
+        .upsert({
+          user_id: user.id,
+          task_id: taskId,
+          current_streak: 0,
+          longest_streak: streaks[taskId]?.longest_streak || 0,
+          last_completed_date: null,
+        }, {
+          onConflict: 'user_id,task_id'
+        })
+
+      if (!error) {
+        setStreaks(prev => ({
+          ...prev,
+          [taskId]: {
+            task_id: taskId,
+            current_streak: 0,
+            longest_streak: streaks[taskId]?.longest_streak || 0,
+          }
+        }))
+      }
+      return
+    }
+
+    // Task is being completed
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    
+    // Check if task was completed yesterday
+    const { data: yesterdayLog } = await supabase
+      .from('task_logs')
+      .select('completed')
+      .eq('task_id', taskId)
+      .eq('user_id', user.id)
+      .eq('date', yesterday)
+      .single()
+
+    let newStreak = 1
+    if (yesterdayLog?.completed) {
+      newStreak = (streaks[taskId]?.current_streak || 0) + 1
+    }
+
+    const longestStreak = Math.max(newStreak, streaks[taskId]?.longest_streak || 0)
+
+    const { error } = await supabase
+      .from('task_streaks')
+      .upsert({
+        user_id: user.id,
+        task_id: taskId,
+        current_streak: newStreak,
+        longest_streak: longestStreak,
+        last_completed_date: today,
+      }, {
+        onConflict: 'user_id,task_id'
+      })
+
+    if (!error) {
+      setStreaks(prev => ({
+        ...prev,
+        [taskId]: {
+          task_id: taskId,
+          current_streak: newStreak,
+          longest_streak: longestStreak,
+        }
+      }))
     }
   }
 
@@ -259,6 +341,10 @@ export default function Home() {
 
     if (!error) {
       setWaterCount(newCount)
+      // Update streak for water if it's now complete
+      if (newCount >= 8) {
+        await updateStreak(waterTask.id, true)
+      }
     }
   }
 
@@ -320,7 +406,7 @@ export default function Home() {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Total</div>
+          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Today</div>
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{todayTasks.length}</div>
         </div>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
@@ -328,7 +414,7 @@ export default function Home() {
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{stats.completedThisWeek}</div>
         </div>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Templates</div>
+          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>All templates</div>
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{templates.length}</div>
         </div>
       </div>
@@ -368,7 +454,7 @@ export default function Home() {
                   <div style={{ fontWeight: '500', fontSize: '14px' }}>{task.name}</div>
                   <div style={{ fontSize: '11px', color: '#666' }}>{task.category || 'custom'}</div>
                 </div>
-                {streak && streak.current_streak > 0 && (
+                {task.is_template && streak && streak.current_streak > 0 && (
                   <span style={{ fontSize: '12px', fontWeight: '600', color: '#059669' }}>
                     {streak.current_streak}d
                   </span>

@@ -5,21 +5,15 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-interface Task {
-  id: string
-  name: string
-  category: string
-  is_template: boolean
-}
-
 interface TaskLog {
   task_id: string
+  date: string
   completed: boolean
+  task_name: string
 }
 
 export default function Calendar() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [taskLogs, setTaskLogs] = useState<(TaskLog & { task_name: string })[]>([])
+  const [taskLogs, setTaskLogs] = useState<TaskLog[]>([])
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
@@ -41,8 +35,6 @@ export default function Calendar() {
         .select('*')
         .eq('user_id', authUser.id)
 
-      setTasks(tasksData || [])
-
       const { data: logsData } = await supabase
         .from('task_logs')
         .select('*')
@@ -50,10 +42,12 @@ export default function Calendar() {
         .order('date', { ascending: true })
 
       if (logsData && tasksData) {
-        const combined = logsData.map(log => {
+        const combined: TaskLog[] = logsData.map(log => {
           const task = tasksData.find(t => t.id === log.task_id)
           return {
-            ...log,
+            task_id: log.task_id,
+            date: log.date,
+            completed: log.completed,
             task_name: task?.name || 'Unknown',
           }
         })
@@ -70,16 +64,16 @@ export default function Calendar() {
     e.preventDefault()
     if (!taskName.trim() || !user) return
 
-    const { error } = await supabase.from('tasks').insert({
+    const { data: newTask } = await supabase.from('tasks').insert({
       user_id: user.id,
       name: taskName.trim(),
       is_template: false,
-    })
+    }).select().single()
 
-    if (!error) {
+    if (newTask) {
       const { error: logError } = await supabase.from('task_logs').insert({
         user_id: user.id,
-        task_id: (await supabase.from('tasks').select('id').eq('name', taskName.trim()).single()).data?.id,
+        task_id: newTask.id,
         date: selectedDate,
         completed: false,
       })
@@ -99,10 +93,12 @@ export default function Calendar() {
           .eq('user_id', user.id)
 
         if (logsData && tasksData) {
-          const combined = logsData.map(log => {
+          const combined: TaskLog[] = logsData.map(log => {
             const task = tasksData.find(t => t.id === log.task_id)
             return {
-              ...log,
+              task_id: log.task_id,
+              date: log.date,
+              completed: log.completed,
               task_name: task?.name || 'Unknown',
             }
           })

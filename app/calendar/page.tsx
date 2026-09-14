@@ -8,12 +8,18 @@ import Link from 'next/link'
 interface Task {
   id: string
   name: string
-  scheduled_date: string
+  category: string
+  is_template: boolean
+}
+
+interface TaskLog {
+  task_id: string
   completed: boolean
 }
 
 export default function Calendar() {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [taskLogs, setTaskLogs] = useState<(TaskLog & { task_name: string })[]>([])
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
@@ -34,9 +40,26 @@ export default function Calendar() {
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
-        .order('scheduled_date', { ascending: true })
 
       setTasks(tasksData || [])
+
+      const { data: logsData } = await supabase
+        .from('task_logs')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .order('date', { ascending: true })
+
+      if (logsData && tasksData) {
+        const combined = logsData.map(log => {
+          const task = tasksData.find(t => t.id === log.task_id)
+          return {
+            ...log,
+            task_name: task?.name || 'Unknown',
+          }
+        })
+        setTaskLogs(combined)
+      }
+
       setLoading(false)
     }
 
@@ -50,35 +73,63 @@ export default function Calendar() {
     const { error } = await supabase.from('tasks').insert({
       user_id: user.id,
       name: taskName.trim(),
-      scheduled_date: selectedDate,
+      is_template: false,
     })
 
     if (!error) {
-      setTaskName('')
-      setShowForm(false)
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('scheduled_date', { ascending: true })
-      setTasks(tasksData || [])
+      const { error: logError } = await supabase.from('task_logs').insert({
+        user_id: user.id,
+        task_id: (await supabase.from('tasks').select('id').eq('name', taskName.trim()).single()).data?.id,
+        date: selectedDate,
+        completed: false,
+      })
+
+      if (!logError) {
+        setTaskName('')
+        setShowForm(false)
+        // Refresh
+        const { data: logsData } = await supabase
+          .from('task_logs')
+          .select('*')
+          .eq('user_id', user.id)
+
+        const { data: tasksData } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', user.id)
+
+        if (logsData && tasksData) {
+          const combined = logsData.map(log => {
+            const task = tasksData.find(t => t.id === log.task_id)
+            return {
+              ...log,
+              task_name: task?.name || 'Unknown',
+            }
+          })
+          setTaskLogs(combined)
+        }
+      }
     }
   }
 
   const toggleTask = async (taskId: string, completed: boolean) => {
     const { error } = await supabase
-      .from('tasks')
+      .from('task_logs')
       .update({ completed })
-      .eq('id', taskId)
+      .eq('task_id', taskId)
+      .eq('user_id', user.id)
+      .eq('date', selectedDate)
 
     if (!error) {
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed } : t))
+      setTaskLogs(prev =>
+        prev.map(t => t.task_id === taskId ? { ...t, completed } : t)
+      )
     }
   }
 
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
-  const tasksForSelectedDate = tasks.filter(t => t.scheduled_date === selectedDate)
+  const tasksForSelectedDate = taskLogs.filter(t => t.date === selectedDate)
   const calendarDays = getDaysInMonth(new Date(selectedDate))
   const currentMonth = new Date(selectedDate).toLocaleString('default', { month: 'long', year: 'numeric' })
 
@@ -105,10 +156,10 @@ export default function Calendar() {
               </div>
             ))}
             {calendarDays.map((day, i) => {
-              const dateStr = new Date(selectedDate).getFullYear() + '-' + 
-                String((new Date(selectedDate).getMonth() + 1)).padStart(2, '0') + '-' + 
+              const dateStr = new Date(selectedDate).getFullYear() + '-' +
+                String((new Date(selectedDate).getMonth() + 1)).padStart(2, '0') + '-' +
                 String(day).padStart(2, '0')
-              const dayTasks = tasks.filter(t => t.scheduled_date === dateStr)
+              const dayTasks = taskLogs.filter(t => t.date === dateStr)
               const isSelected = dateStr === selectedDate
 
               return (
@@ -128,7 +179,7 @@ export default function Calendar() {
                   <div>{day}</div>
                   {dayTasks.length > 0 && (
                     <div style={{ fontSize: '10px', color: '#3b82f6', marginTop: '2px' }}>
-                      {dayTasks.length} task{dayTasks.length !== 1 ? 's' : ''}
+                      {dayTasks.length}
                     </div>
                   )}
                 </button>
@@ -147,7 +198,7 @@ export default function Calendar() {
           ) : (
             tasksForSelectedDate.map(task => (
               <div
-                key={task.id}
+                key={task.task_id}
                 style={{
                   padding: '1rem',
                   background: task.completed ? '#f0fdf4' : '#f9fafb',
@@ -160,14 +211,15 @@ export default function Calendar() {
                   <input
                     type="checkbox"
                     checked={task.completed}
-                    onChange={e => toggleTask(task.id, e.target.checked)}
+                    onChange={e => toggleTask(task.task_id, e.target.checked)}
                     style={{ cursor: 'pointer' }}
                   />
                   <span style={{
                     textDecoration: task.completed ? 'line-through' : 'none',
                     color: task.completed ? '#999' : '#000',
+                    fontSize: '14px',
                   }}>
-                    {task.name}
+                    {task.task_name}
                   </span>
                 </label>
               </div>

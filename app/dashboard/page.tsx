@@ -62,7 +62,6 @@ export default function Dashboard() {
         const dateStr = date.toISOString().split('T')[0]
         const dayName = date.toLocaleDateString('default', { weekday: 'short' })
         
-        // Get all logs for this day
         const { data: dayLogs } = await supabase
           .from('task_logs')
           .select('*')
@@ -146,8 +145,6 @@ export default function Dashboard() {
 
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
-  const maxDaily = Math.max(...dailyCompletion.map(d => Math.max(d.planned, d.completed)), 1)
-
   return (
     <div style={{ padding: '1.5rem', maxWidth: '700px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -163,7 +160,6 @@ export default function Dashboard() {
           padding: '1rem',
           background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
           color: 'white',
-          border: 'none',
           borderRadius: '8px',
           textAlign: 'center',
         }}>
@@ -181,7 +177,6 @@ export default function Dashboard() {
           padding: '1rem',
           background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
           color: 'white',
-          border: 'none',
           borderRadius: '8px',
           textAlign: 'center',
         }}>
@@ -199,7 +194,6 @@ export default function Dashboard() {
           padding: '1rem',
           background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
           color: 'white',
-          border: 'none',
           borderRadius: '8px',
           textAlign: 'center',
         }}>
@@ -217,7 +211,6 @@ export default function Dashboard() {
           padding: '1rem',
           background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: 'white',
-          border: 'none',
           borderRadius: '8px',
           textAlign: 'center',
         }}>
@@ -225,13 +218,13 @@ export default function Dashboard() {
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
             {taskStats.length > 0 ? taskStats[0].taskName : 'No data'}
           </div>
-          <div style={{ fontSize: '12px', opacity: 0.8' }}>
+          <div style={{ fontSize: '12px', opacity: 0.8 }}>
             {taskStats.length > 0 ? `${taskStats[0].thisWeek}x this week` : ''}
           </div>
         </div>
       </div>
 
-      {/* Planned vs Completed - Task Boxes */}
+      {/* Weekly Overview */}
       <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Weekly Overview</h2>
       <div style={{
         padding: '1.5rem',
@@ -243,7 +236,7 @@ export default function Dashboard() {
         {/* Each day */}
         {dailyCompletion.map((day, i) => (
           <div key={i} style={{ marginBottom: i === dailyCompletion.length - 1 ? '0' : '1.5rem' }}>
-            {/* Day header with date */}
+            {/* Day header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
               <span style={{ fontSize: '14px', fontWeight: '600', color: '#000', minWidth: '45px' }}>
                 {day.dayName}
@@ -263,35 +256,33 @@ export default function Dashboard() {
                   No tasks planned
                 </span>
               ) : (
-                <>
-                  {Array.from({ length: day.planned }).map((_, boxIndex) => (
-                    <div
-                      key={boxIndex}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '4px',
-                        background: boxIndex < day.completed ? '#3b82f6' : '#e5e7eb',
-                        border: boxIndex < day.completed ? '1px solid #1e40af' : '1px solid #d1d5db',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        color: boxIndex < day.completed ? 'white' : '#999',
-                      }}
-                      title={boxIndex < day.completed ? 'Completed' : 'Pending'}
-                    >
-                      {boxIndex < day.completed ? '✓' : '○'}
-                    </div>
-                  ))}
-                </>
+                Array.from({ length: day.planned }).map((_, boxIndex) => (
+                  <div
+                    key={boxIndex}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      background: boxIndex < day.completed ? '#3b82f6' : '#e5e7eb',
+                      border: boxIndex < day.completed ? '1px solid #1e40af' : '1px solid #d1d5db',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: boxIndex < day.completed ? 'white' : '#999',
+                    }}
+                    title={boxIndex < day.completed ? 'Completed' : 'Pending'}
+                  >
+                    {boxIndex < day.completed ? '✓' : '○'}
+                  </div>
+                ))
               )}
             </div>
           </div>
         ))}
 
-        {/* Legend at bottom */}
+        {/* Legend */}
         <div style={{
           marginTop: '1.5rem',
           paddingTop: '1.5rem',
@@ -316,7 +307,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Habits Performance */}
+      {/* Habits Insights */}
       {taskStats.length > 0 && (
         <>
           <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Habits Insights</h2>
@@ -332,7 +323,9 @@ export default function Dashboard() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '18px' }}>{index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐'}</span>
+                  <span style={{ fontSize: '18px' }}>
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐'}
+                  </span>
                   <div style={{ fontWeight: '600', fontSize: '14px', flex: 1 }}>
                     {task.taskName}
                   </div>

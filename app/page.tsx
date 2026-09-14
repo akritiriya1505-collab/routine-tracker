@@ -394,6 +394,9 @@ export default function Home() {
 
       {/* Navigation */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        <Link href="/water" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
+          💧 Water
+        </Link>
         <Link href="/calendar" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
           Calendar
         </Link>

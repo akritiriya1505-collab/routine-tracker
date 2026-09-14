@@ -231,76 +231,87 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Planned vs Completed Chart */}
-      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Planned vs Completed</h2>
+      {/* Planned vs Completed - Task Boxes */}
+      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Weekly Overview</h2>
       <div style={{
-        padding: '2rem 1rem',
+        padding: '1.5rem',
         background: '#f9fafb',
         border: '0.5px solid #e5e7eb',
         borderRadius: '8px',
         marginBottom: '2rem',
       }}>
-        {/* Chart */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: '16px',
-          height: '220px',
-          marginBottom: '2rem',
-          justifyContent: 'space-around',
-        }}>
-          {dailyCompletion.map((day, i) => (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '4px' }}>
-              {/* Bars container */}
-              <div style={{ display: 'flex', gap: '3px', height: '160px', alignItems: 'flex-end' }}>
-                {/* Planned bar (light gray) */}
-                <div
-                  style={{
-                    flex: 1,
-                    background: '#d1d5db',
-                    borderRadius: '3px 3px 0 0',
-                    height: maxDaily > 0 ? `${(day.planned / maxDaily) * 160}px` : '2px',
-                    minHeight: day.planned > 0 ? '2px' : '0px',
-                  }}
-                />
-                {/* Completed bar (blue) */}
-                <div
-                  style={{
-                    flex: 1,
-                    background: '#3b82f6',
-                    borderRadius: '3px 3px 0 0',
-                    height: maxDaily > 0 ? `${(day.completed / maxDaily) * 160}px` : '2px',
-                    minHeight: day.completed > 0 ? '2px' : '0px',
-                  }}
-                />
-              </div>
-
-              {/* Labels */}
-              <div style={{ textAlign: 'center', width: '100%', fontSize: '9px' }}>
-                <div style={{ color: '#666', fontWeight: '600' }}>{day.dayName}</div>
-                <div style={{ color: '#999', fontSize: '8px' }}>P:{day.planned} C:{day.completed}</div>
-              </div>
+        {/* Each day */}
+        {dailyCompletion.map((day, i) => (
+          <div key={i} style={{ marginBottom: i === dailyCompletion.length - 1 ? '0' : '1.5rem' }}>
+            {/* Day header with date */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+              <span style={{ fontSize: '14px', fontWeight: '600', color: '#000', minWidth: '45px' }}>
+                {day.dayName}
+              </span>
+              <span style={{ fontSize: '11px', color: '#999' }}>
+                {new Date(day.date).getDate()}
+              </span>
+              <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6', marginLeft: 'auto' }}>
+                {day.completed}/{day.planned}
+              </span>
             </div>
-          ))}
-        </div>
 
-        {/* Legend */}
-        <div style={{
-          display: 'flex',
-          gap: '2rem',
-          justifyContent: 'center',
-          padding: '1rem',
-          background: 'white',
-          borderRadius: '4px',
-          border: '0.5px solid #e5e7eb',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-            <div style={{ width: '12px', height: '12px', background: '#d1d5db', borderRadius: '2px' }} />
-            <span>Planned</span>
+            {/* Task boxes */}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {day.planned === 0 ? (
+                <span style={{ fontSize: '12px', color: '#999', fontStyle: 'italic' }}>
+                  No tasks planned
+                </span>
+              ) : (
+                <>
+                  {Array.from({ length: day.planned }).map((_, boxIndex) => (
+                    <div
+                      key={boxIndex}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        background: boxIndex < day.completed ? '#3b82f6' : '#e5e7eb',
+                        border: boxIndex < day.completed ? '1px solid #1e40af' : '1px solid #d1d5db',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        color: boxIndex < day.completed ? 'white' : '#999',
+                      }}
+                      title={boxIndex < day.completed ? 'Completed' : 'Pending'}
+                    >
+                      {boxIndex < day.completed ? '✓' : '○'}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-            <div style={{ width: '12px', height: '12px', background: '#3b82f6', borderRadius: '2px' }} />
+        ))}
+
+        {/* Legend at bottom */}
+        <div style={{
+          marginTop: '1.5rem',
+          paddingTop: '1.5rem',
+          borderTop: '0.5px solid #e5e7eb',
+          display: 'flex',
+          gap: '1.5rem',
+          justifyContent: 'center',
+          fontSize: '12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '20px', height: '20px', background: '#3b82f6', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', fontWeight: '600' }}>
+              ✓
+            </div>
             <span>Completed</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '20px', height: '20px', background: '#e5e7eb', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '10px' }}>
+              ○
+            </div>
+            <span>Pending</span>
           </div>
         </div>
       </div>

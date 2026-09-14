@@ -35,8 +35,10 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([])
-  const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0, customTodayCount: 0 })
+  const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0 })
   const [waterCount, setWaterCount] = useState(0)
+  const [reflection, setReflection] = useState('')
+  const [reflectionSaved, setReflectionSaved] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -104,21 +106,24 @@ export default function Home() {
         .gte('date', weekAgo)
         .eq('completed', true)
 
-      const customTodayCount = logsData?.filter(l => {
-        const task = allTasks?.find(t => t.id === l.task_id)
-        return !task?.is_template && l.completed
-      }).length || 0
-
       const waterLog = logsData?.find((l: any) => {
         const task = allTasks?.find(t => t.id === l.task_id && t.name.toLowerCase().includes('water'))
         return task
       })
 
+      // Fetch saved reflection
+      const { data: reflectionData } = await supabase
+        .from('reflections')
+        .select('content')
+        .eq('user_id', authUser.id)
+        .eq('date', today)
+        .single()
+
+      setReflection(reflectionData?.content || '')
       setWaterCount(waterLog?.count || 0)
       setStats({
-        totalTasks: allTasksData?.length || 0,
+        totalTasks: logsData?.length || 0,
         completedThisWeek: weekLogsData?.length || 0,
-        customTodayCount,
       })
 
       setLoading(false)
@@ -348,6 +353,25 @@ export default function Home() {
     }
   }
 
+  const saveReflection = async () => {
+    if (!user) return
+
+    const today = new Date().toISOString().split('T')[0]
+
+    const { error } = await supabase.from('reflections').upsert({
+      user_id: user.id,
+      date: today,
+      content: reflection,
+    }, {
+      onConflict: 'user_id,date'
+    })
+
+    if (!error) {
+      setReflectionSaved(true)
+      setTimeout(() => setReflectionSaved(false), 2000)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
     router.push('/login')
@@ -384,7 +408,7 @@ export default function Home() {
       {/* Date & Progress */}
       <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', marginBottom: '2rem', textAlign: 'center' }}>
         <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>{today}</div>
-        <div style={{ fontSize: '12px', color: '#666' }}>
+        <div style={{ fontSize: '12px', color: '#666', marginBottom: '0.5rem' }}>
           {completedTasks} of {todayTasks.length} completed
         </div>
         <div style={{
@@ -404,18 +428,14 @@ export default function Home() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Today</div>
+          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Planned today</div>
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{todayTasks.length}</div>
         </div>
         <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
           <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>This week</div>
           <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{stats.completedThisWeek}</div>
-        </div>
-        <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>All templates</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{templates.length}</div>
         </div>
       </div>
 
@@ -456,7 +476,7 @@ export default function Home() {
                 </div>
                 {task.is_template && streak && streak.current_streak > 0 && (
                   <span style={{ fontSize: '12px', fontWeight: '600', color: '#059669' }}>
-                    {streak.current_streak}d
+                    🔥 {streak.current_streak}d
                   </span>
                 )}
               </div>
@@ -527,7 +547,7 @@ export default function Home() {
                     <span>{task.name}</span>
                     {streaks[task.id] && (
                       <span style={{ fontSize: '11px', color: '#059669', fontWeight: '600' }}>
-                        {streaks[task.id].current_streak}d
+                        🔥 {streaks[task.id].current_streak}d
                       </span>
                     )}
                   </button>
@@ -615,12 +635,14 @@ export default function Home() {
         borderRadius: '8px',
       }}>
         <label style={{ fontSize: '11px', color: '#0284c7', fontWeight: '600', marginBottom: '8px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          Reflection
+          📝 Daily Reflection
         </label>
         <p style={{ fontSize: '13px', marginBottom: '1rem', color: '#0b0b0b' }}>
           What's one thing you accomplished today?
         </p>
         <textarea
+          value={reflection}
+          onChange={e => setReflection(e.target.value)}
           placeholder="Type here..."
           style={{
             width: '100%',
@@ -630,8 +652,26 @@ export default function Home() {
             fontSize: '12px',
             minHeight: '60px',
             fontFamily: 'inherit',
+            marginBottom: '0.5rem',
           }}
         />
+        <button
+          onClick={saveReflection}
+          style={{
+            width: '100%',
+            padding: '0.5rem',
+            background: reflectionSaved ? '#059669' : '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: '600',
+            transition: 'background 0.3s',
+          }}
+        >
+          {reflectionSaved ? '✓ Saved' : 'Save Reflection'}
+        </button>
       </div>
     </div>
   )

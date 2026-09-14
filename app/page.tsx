@@ -98,8 +98,6 @@ export default function Home() {
       .eq('user_id', userId)
       .eq('date', dateStr)
 
-    setTaskLogs(logsData || [])
-
     // Combine tasks with logs
     if (templates && logsData) {
       const combined = logsData.map(log => {

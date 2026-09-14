@@ -50,17 +50,26 @@ export default function Dashboard() {
         .select('*')
         .eq('user_id', authUser.id)
 
-      // Daily completion for last 7 days
+      // Get this week: Monday to Sunday
+      const today = new Date()
+      const dayOfWeek = today.getDay()
+      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Adjust to Monday
+      const monday = new Date(today.setDate(diff))
+      
       const last7Days: DailyData[] = []
       let totalCompleted = 0
       let daysWithCompletions = 0
       let bestDay = ''
       let bestDayCount = 0
 
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+      // Loop Monday (0) to Sunday (6)
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday)
+        date.setDate(date.getDate() + i)
         const dateStr = date.toISOString().split('T')[0]
         const dayName = date.toLocaleDateString('default', { weekday: 'short' })
+        const dayDate = String(date.getDate()).padStart(2, '0')
+        const monthNum = String(date.getMonth() + 1).padStart(2, '0')
         
         const { data: dayLogs } = await supabase
           .from('task_logs')
@@ -81,7 +90,7 @@ export default function Dashboard() {
 
         last7Days.push({
           date: dateStr,
-          dayName: dayName,
+          dayName: `${dayName} ${dayDate}/${monthNum}`,
           planned: planned,
           completed: completed,
         })
@@ -238,11 +247,8 @@ export default function Dashboard() {
           <div key={i} style={{ marginBottom: i === dailyCompletion.length - 1 ? '0' : '1.5rem' }}>
             {/* Day header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '14px', fontWeight: '600', color: '#000', minWidth: '45px' }}>
+              <span style={{ fontSize: '14px', fontWeight: '600', color: '#000', minWidth: '100px' }}>
                 {day.dayName}
-              </span>
-              <span style={{ fontSize: '11px', color: '#999' }}>
-                {new Date(day.date).getDate()}
               </span>
               <span style={{ fontSize: '12px', fontWeight: '600', color: '#3b82f6', marginLeft: 'auto' }}>
                 {day.completed}/{day.planned}

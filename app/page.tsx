@@ -36,7 +36,6 @@ export default function Home() {
   const [showSearch, setShowSearch] = useState(false)
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([])
   const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0 })
-  const [waterCount, setWaterCount] = useState(0)
   const [reflection, setReflection] = useState('')
   const [reflectionSaved, setReflectionSaved] = useState(false)
   const router = useRouter()
@@ -106,11 +105,6 @@ export default function Home() {
         .gte('date', weekAgo)
         .eq('completed', true)
 
-      const waterLog = logsData?.find((l: any) => {
-        const task = allTasks?.find(t => t.id === l.task_id && t.name.toLowerCase().includes('water'))
-        return task
-      })
-
       // Fetch saved reflection
       const { data: reflectionData } = await supabase
         .from('reflections')
@@ -120,7 +114,6 @@ export default function Home() {
         .single()
 
       setReflection(reflectionData?.content || '')
-      setWaterCount(waterLog?.count || 0)
       setStats({
         totalTasks: logsData?.length || 0,
         completedThisWeek: weekLogsData?.length || 0,
@@ -318,38 +311,6 @@ export default function Home() {
           longest_streak: longestStreak,
         }
       }))
-    }
-  }
-
-  const addWater = async () => {
-    if (!user) return
-
-    const today = new Date().toISOString().split('T')[0]
-    const waterTask = templates.find(t => t.name.toLowerCase().includes('water'))
-
-    if (!waterTask) {
-      alert('Create a "Water" task first in Templates')
-      return
-    }
-
-    const newCount = waterCount + 1
-
-    const { error } = await supabase.from('task_logs').upsert({
-      user_id: user.id,
-      task_id: waterTask.id,
-      date: today,
-      completed: newCount >= 8,
-      count: newCount,
-    }, {
-      onConflict: 'user_id,task_id,date'
-    })
-
-    if (!error) {
-      setWaterCount(newCount)
-      // Update streak for water if it's now complete
-      if (newCount >= 8) {
-        await updateStreak(waterTask.id, true)
-      }
     }
   }
 
@@ -600,35 +561,6 @@ export default function Home() {
           </div>
         )}
       </div>
-
-      {/* Water Quick Tracker */}
-      {templates.some(t => t.name.toLowerCase().includes('water')) && (
-        <div style={{ marginBottom: '2rem', padding: '1rem', background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: '8px' }}>
-          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '1rem', color: '#0284c7' }}>💧 Water intake</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
-            <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{waterCount}/8</div>
-            <div style={{ flex: 1, height: '8px', background: '#dbeafe', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: '#3b82f6', width: `${(waterCount / 8) * 100}%` }} />
-            </div>
-          </div>
-          <button
-            onClick={addWater}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              background: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
-            }}
-          >
-            + Add cup
-          </button>
-        </div>
-      )}
 
       {/* Reflection */}
       <div style={{

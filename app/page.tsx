@@ -30,6 +30,7 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [dateTasksData, setDateTasksData] = useState<(Task & TaskLog)[]>([])
   const [templates, setTemplates] = useState<Task[]>([])
+  const [allTasks, setAllTasks] = useState<Task[]>([])
   const [streaks, setStreaks] = useState<{ [key: string]: TaskStreak }>({})
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -53,17 +54,19 @@ export default function Home() {
       }
       setUser(authUser)
 
-      // Get all templates
-      const { data: templatesData } = await supabase
+      // Get all tasks (both templates and custom)
+      const { data: allTasksData } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
-        .eq('is_template', true)
 
-      setTemplates(templatesData || [])
+      // Set templates (for search/filtering)
+      const templatesData = allTasksData?.filter(t => t.is_template) || []
+      setTemplates(templatesData)
+      setAllTasks(allTasksData || [])
 
       // Find or create Water template
-      let waterId = templatesData?.find(t => t.name.toLowerCase().includes('water'))?.id
+      let waterId = allTasksData?.find(t => t.name.toLowerCase().includes('water') && t.is_template)?.id
 
       if (!waterId) {
         const { data: newWater } = await supabase
@@ -81,14 +84,14 @@ export default function Home() {
 
       setWaterTaskId(waterId)
 
-      // Fetch data for selected date
-      await fetchDateData(authUser.id, selectedDate, waterId, templatesData || [])
+      // Fetch data for selected date (use allTasksData which includes both templates and custom tasks)
+      await fetchDateData(authUser.id, selectedDate, waterId, allTasksData || [])
     }
 
     init()
   }, [selectedDate, router])
 
-  const fetchDateData = async (userId: string, date: Date, waterId: string, allTemplates: Task[]) => {
+  const fetchDateData = async (userId: string, date: Date, waterId: string, allTasks: Task[]) => {
     const dateStr = date.toISOString().split('T')[0]
 
     // Get task logs for selected date
@@ -99,9 +102,9 @@ export default function Home() {
       .eq('date', dateStr)
 
     // Combine tasks with logs
-    if (allTemplates && logsData) {
+    if (allTasks && logsData) {
       const combined = logsData.map(log => {
-        const task = allTemplates.find(t => t.id === log.task_id)
+        const task = allTasks.find(t => t.id === log.task_id)
         return { 
           ...task, 
           ...log,
@@ -367,8 +370,8 @@ export default function Home() {
     if (!error) {
       setSearchInput('')
       setShowSearch(false)
-      // Refetch data
-      await fetchDateData(user.id, selectedDate, waterTaskId, templates)
+      // Refetch data with all tasks
+      await fetchDateData(user.id, selectedDate, waterTaskId, allTasks)
     }
   }
 

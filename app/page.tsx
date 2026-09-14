@@ -82,13 +82,13 @@ export default function Home() {
       setWaterTaskId(waterId)
 
       // Fetch data for selected date
-      await fetchDateData(authUser.id, selectedDate, waterId)
+      await fetchDateData(authUser.id, selectedDate, waterId, templatesData || [])
     }
 
     init()
   }, [selectedDate, router])
 
-  const fetchDateData = async (userId: string, date: Date, waterId: string) => {
+  const fetchDateData = async (userId: string, date: Date, waterId: string, allTemplates: Task[]) => {
     const dateStr = date.toISOString().split('T')[0]
 
     // Get task logs for selected date
@@ -99,12 +99,18 @@ export default function Home() {
       .eq('date', dateStr)
 
     // Combine tasks with logs
-    if (templates && logsData) {
+    if (allTemplates && logsData) {
       const combined = logsData.map(log => {
-        const task = templates.find(t => t.id === log.task_id)
-        return { ...task, ...log } as Task & TaskLog
+        const task = allTemplates.find(t => t.id === log.task_id)
+        return { 
+          ...task, 
+          ...log,
+          name: task?.name || 'Unnamed task'
+        } as Task & TaskLog
       })
       setDateTasksData(combined)
+    } else {
+      setDateTasksData([])
     }
 
     // Fetch streaks
@@ -609,11 +615,11 @@ export default function Home() {
 
         {/* Tasks */}
         <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Tasks ({dateTasksData.filter(t => t.completed).length}/{dateTasksData.length})</h2>
-          {dateTasksData.length === 0 ? (
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Tasks ({dateTasksData.filter(t => t.completed && t.name.toLowerCase() !== 'water').length}/{dateTasksData.filter(t => t.name.toLowerCase() !== 'water').length})</h2>
+          {dateTasksData.filter(t => t.name.toLowerCase() !== 'water').length === 0 ? (
             <p style={{ fontSize: '13px', color: '#999', margin: '0' }}>No tasks planned for this day</p>
           ) : (
-            dateTasksData.map((task) => (
+            dateTasksData.filter(t => t.name.toLowerCase() !== 'water').map((task) => (
               <div
                 key={task.task_id}
                 style={{
@@ -641,7 +647,7 @@ export default function Home() {
                     color: '#000',
                     textDecoration: task.completed ? 'line-through' : 'none',
                   }}>
-                    {task.name}
+                    {task.name || 'Unnamed task'}
                   </p>
                   {task.is_template && streaks[task.task_id] && streaks[task.task_id].current_streak > 0 && (
                     <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>

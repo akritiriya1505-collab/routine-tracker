@@ -17,6 +17,7 @@ interface TaskLog {
   task_id: string
   completed: boolean
   count: number
+  date: string
 }
 
 interface TaskStreak {
@@ -26,9 +27,9 @@ interface TaskStreak {
 }
 
 export default function Home() {
-  const [todayTasks, setTodayTasks] = useState<(Task & TaskLog)[]>([])
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [dateTasksData, setDateTasksData] = useState<(Task & TaskLog)[]>([])
   const [templates, setTemplates] = useState<Task[]>([])
-  const [taskLogs, setTaskLogs] = useState<TaskLog[]>([])
   const [streaks, setStreaks] = useState<{ [key: string]: TaskStreak }>({})
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -38,8 +39,11 @@ export default function Home() {
   const [stats, setStats] = useState({ totalTasks: 0, completedThisWeek: 0 })
   const [reflection, setReflection] = useState('')
   const [reflectionSaved, setReflectionSaved] = useState(false)
+  const [waterCount, setWaterCount] = useState(0)
+  const [waterTaskId, setWaterTaskId] = useState('')
   const router = useRouter()
 
+  // Fetch data when date changes
   useEffect(() => {
     const init = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser()
@@ -49,231 +53,168 @@ export default function Home() {
       }
       setUser(authUser)
 
-      const today = new Date().toISOString().split('T')[0]
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-      // Fetch all tasks (both template and custom)
-      const { data: allTasks } = await supabase
+      // Get all templates
+      const { data: templatesData } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
-      setTemplates(allTasks?.filter(t => t.is_template) || [])
+        .eq('is_template', true)
 
-      // Fetch today's task logs
-      const { data: logsData } = await supabase
-        .from('task_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .eq('date', today)
-      setTaskLogs(logsData || [])
+      setTemplates(templatesData || [])
 
-      // Combine tasks with logs for today
-      if (allTasks && logsData) {
-        const combined = logsData.map(log => {
-          const task = allTasks.find(t => t.id === log.task_id)
-          return { ...task, ...log } as Task & TaskLog
-        })
-        setTodayTasks(combined)
+      // Find or create Water template
+      let waterId = templatesData?.find(t => t.name.toLowerCase().includes('water'))?.id
+
+      if (!waterId) {
+        const { data: newWater } = await supabase
+          .from('tasks')
+          .insert({
+            user_id: authUser.id,
+            name: 'Water',
+            category: 'health',
+            is_template: true,
+          })
+          .select()
+          .single()
+        waterId = newWater?.id
       }
 
-      // Fetch streaks
-      const { data: streaksData } = await supabase
-        .from('task_streaks')
-        .select('*')
-        .eq('user_id', authUser.id)
+      setWaterTaskId(waterId)
 
-      const streakMap: { [key: string]: TaskStreak } = {}
-      streaksData?.forEach((s: any) => {
-        streakMap[s.task_id] = {
-          task_id: s.task_id,
-          current_streak: s.current_streak || 0,
-          longest_streak: s.longest_streak || 0,
-        }
-      })
-      setStreaks(streakMap)
-
-      // Get stats
-      const { data: allTasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', authUser.id)
-
-      const { data: weekLogsData } = await supabase
-        .from('task_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .gte('date', weekAgo)
-        .eq('completed', true)
-
-      // Fetch saved reflection
-      const { data: reflectionData } = await supabase
-        .from('reflections')
-        .select('content')
-        .eq('user_id', authUser.id)
-        .eq('date', today)
-        .single()
-
-      setReflection(reflectionData?.content || '')
-      setStats({
-        totalTasks: logsData?.length || 0,
-        completedThisWeek: weekLogsData?.length || 0,
-      })
-
-      setLoading(false)
+      // Fetch data for selected date
+      await fetchDateData(authUser.id, selectedDate, waterId)
     }
 
     init()
-  }, [router])
+  }, [selectedDate, router])
 
-  useEffect(() => {
-    if (searchInput.trim()) {
-      const filtered = templates.filter(t =>
-        t.name.toLowerCase().includes(searchInput.toLowerCase())
-      )
-      setFilteredTasks(filtered)
-    } else {
-      setFilteredTasks([])
-    }
-  }, [searchInput, templates])
+  const fetchDateData = async (userId: string, date: Date, waterId: string) => {
+    const dateStr = date.toISOString().split('T')[0]
 
-  const handleAddTask = async (taskId?: string, isCustom: boolean = false) => {
-    if (!user) return
+    // Get task logs for selected date
+    const { data: logsData } = await supabase
+      .from('task_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date', dateStr)
 
-    const today = new Date().toISOString().split('T')[0]
+    setTaskLogs(logsData || [])
 
-    if (isCustom && taskId === 'new') {
-      // Create custom task
-      const { data: newTask } = await supabase.from('tasks').insert({
-        user_id: user.id,
-        name: searchInput.trim(),
-        is_template: false,
-      }).select().single()
-
-      if (newTask) {
-        const { error } = await supabase.from('task_logs').insert({
-          user_id: user.id,
-          task_id: newTask.id,
-          date: today,
-          completed: false,
-        })
-
-        if (!error) {
-          setSearchInput('')
-          setShowSearch(false)
-          // Refresh today's tasks
-          const { data: logsData } = await supabase
-            .from('task_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('date', today)
-
-          const { data: allTasks } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('user_id', user.id)
-
-          if (allTasks && logsData) {
-            const combined = logsData.map(log => {
-              const task = allTasks.find(t => t.id === log.task_id)
-              return { ...task, ...log } as Task & TaskLog
-            })
-            setTodayTasks(combined)
-          }
-        }
-      }
-    } else if (taskId) {
-      // Add existing template
-      const { error } = await supabase.from('task_logs').upsert({
-        user_id: user.id,
-        task_id: taskId,
-        date: today,
-        completed: false,
-      }, {
-        onConflict: 'user_id,task_id,date'
+    // Combine tasks with logs
+    if (templates && logsData) {
+      const combined = logsData.map(log => {
+        const task = templates.find(t => t.id === log.task_id)
+        return { ...task, ...log } as Task & TaskLog
       })
-
-      if (!error) {
-        setSearchInput('')
-        setShowSearch(false)
-        // Refresh
-        const { data: logsData } = await supabase
-          .from('task_logs')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('date', today)
-
-        const { data: allTasks } = await supabase
-          .from('tasks')
-          .select('*')
-          .eq('user_id', user.id)
-
-        if (allTasks && logsData) {
-          const combined = logsData.map(log => {
-            const task = allTasks.find(t => t.id === log.task_id)
-            return { ...task, ...log } as Task & TaskLog
-          })
-          setTodayTasks(combined)
-        }
-      }
+      setDateTasksData(combined)
     }
+
+    // Fetch streaks
+    const { data: streaksData } = await supabase
+      .from('task_streaks')
+      .select('*')
+      .eq('user_id', userId)
+
+    const streakMap: { [key: string]: TaskStreak } = {}
+    streaksData?.forEach((s: any) => {
+      streakMap[s.task_id] = {
+        task_id: s.task_id,
+        current_streak: s.current_streak || 0,
+        longest_streak: s.longest_streak || 0,
+      }
+    })
+    setStreaks(streakMap)
+
+    // Get stats (for this week)
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const { data: weekLogsData } = await supabase
+      .from('task_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', weekAgo)
+      .eq('completed', true)
+
+    setStats({
+      totalTasks: logsData?.length || 0,
+      completedThisWeek: weekLogsData?.length || 0,
+    })
+
+    // Fetch water for selected date
+    const waterLog = logsData?.find((l: any) => l.task_id === waterId)
+    setWaterCount(waterLog?.count || 0)
+
+    // Fetch reflection for selected date
+    const { data: reflectionData } = await supabase
+      .from('reflections')
+      .select('content')
+      .eq('user_id', userId)
+      .eq('date', dateStr)
+      .single()
+
+    setReflection(reflectionData?.content || '')
+    setLoading(false)
   }
 
   const toggleTask = async (taskId: string, completed: boolean) => {
-    const today = new Date().toISOString().split('T')[0]
-    
-    const { error } = await supabase
-      .from('task_logs')
-      .update({ completed })
-      .eq('task_id', taskId)
-      .eq('user_id', user.id)
-      .eq('date', today)
+    if (!user) return
+
+    const dateStr = selectedDate.toISOString().split('T')[0]
+
+    const { error } = await supabase.from('task_logs').upsert({
+      user_id: user.id,
+      task_id: taskId,
+      date: dateStr,
+      completed: !completed,
+      count: 0,
+    }, {
+      onConflict: 'user_id,task_id,date'
+    })
 
     if (!error) {
-      setTodayTasks(prev =>
-        prev.map(t => t.task_id === taskId ? { ...t, completed } : t)
+      // Update local state
+      setDateTasksData(prev =>
+        prev.map(t =>
+          t.task_id === taskId ? { ...t, completed: !completed } : t
+        )
       )
 
-      // Update streak if it's a template task
-      const task = todayTasks.find(t => t.task_id === taskId)
-      if (task && task.is_template) {
-        await updateStreak(taskId, completed)
+      // Update streak if task is being marked complete
+      if (!completed) {
+        await updateStreak(taskId, true)
+      } else {
+        // Task is being uncompleted - reset current streak
+        const { error: streakError } = await supabase
+          .from('task_streaks')
+          .upsert({
+            user_id: user.id,
+            task_id: taskId,
+            current_streak: 0,
+            longest_streak: streaks[taskId]?.longest_streak || 0,
+            last_completed_date: null,
+          }, {
+            onConflict: 'user_id,task_id'
+          })
+
+        if (!streakError) {
+          setStreaks(prev => ({
+            ...prev,
+            [taskId]: {
+              task_id: taskId,
+              current_streak: 0,
+              longest_streak: streaks[taskId]?.longest_streak || 0,
+            }
+          }))
+        }
       }
     }
   }
 
   const updateStreak = async (taskId: string, completed: boolean) => {
-    const today = new Date().toISOString().split('T')[0]
+    if (!user || !completed) return
 
-    if (!completed) {
-      // Task unchecked - reset streak to 0
-      const { error } = await supabase
-        .from('task_streaks')
-        .upsert({
-          user_id: user.id,
-          task_id: taskId,
-          current_streak: 0,
-          longest_streak: streaks[taskId]?.longest_streak || 0,
-          last_completed_date: null,
-        }, {
-          onConflict: 'user_id,task_id'
-        })
+    const dateStr = selectedDate.toISOString().split('T')[0]
+    const yesterday = new Date(selectedDate.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      if (!error) {
-        setStreaks(prev => ({
-          ...prev,
-          [taskId]: {
-            task_id: taskId,
-            current_streak: 0,
-            longest_streak: streaks[taskId]?.longest_streak || 0,
-          }
-        }))
-      }
-      return
-    }
-
-    // Task is being completed
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    
     // Check if task was completed yesterday
     const { data: yesterdayLog } = await supabase
       .from('task_logs')
@@ -297,7 +238,7 @@ export default function Home() {
         task_id: taskId,
         current_streak: newStreak,
         longest_streak: longestStreak,
-        last_completed_date: today,
+        last_completed_date: dateStr,
       }, {
         onConflict: 'user_id,task_id'
       })
@@ -314,14 +255,60 @@ export default function Home() {
     }
   }
 
+  const addWater = async () => {
+    if (!user || !waterTaskId) return
+
+    const dateStr = selectedDate.toISOString().split('T')[0]
+    const newCount = waterCount + 1
+    const isCompleted = newCount >= 8
+
+    const { error } = await supabase.from('task_logs').upsert({
+      user_id: user.id,
+      task_id: waterTaskId,
+      date: dateStr,
+      completed: isCompleted,
+      count: newCount,
+    }, {
+      onConflict: 'user_id,task_id,date'
+    })
+
+    if (!error) {
+      setWaterCount(newCount)
+      if (isCompleted) {
+        await updateStreak(waterTaskId, true)
+      }
+    }
+  }
+
+  const removeWater = async () => {
+    if (!user || !waterTaskId || waterCount === 0) return
+
+    const dateStr = selectedDate.toISOString().split('T')[0]
+    const newCount = waterCount - 1
+
+    const { error } = await supabase.from('task_logs').upsert({
+      user_id: user.id,
+      task_id: waterTaskId,
+      date: dateStr,
+      completed: newCount >= 8,
+      count: newCount,
+    }, {
+      onConflict: 'user_id,task_id,date'
+    })
+
+    if (!error) {
+      setWaterCount(newCount)
+    }
+  }
+
   const saveReflection = async () => {
     if (!user) return
 
-    const today = new Date().toISOString().split('T')[0]
+    const dateStr = selectedDate.toISOString().split('T')[0]
 
     const { error } = await supabase.from('reflections').upsert({
       user_id: user.id,
-      date: today,
+      date: dateStr,
       content: reflection,
     }, {
       onConflict: 'user_id,date'
@@ -338,274 +325,403 @@ export default function Home() {
     router.push('/login')
   }
 
+  const handleAddTask = async (taskName: string) => {
+    if (!user || !taskName.trim()) return
+
+    const dateStr = selectedDate.toISOString().split('T')[0]
+
+    // Check if it's a template task
+    let taskId: string
+    const existingTemplate = templates.find(t => t.name.toLowerCase() === taskName.toLowerCase())
+
+    if (existingTemplate) {
+      taskId = existingTemplate.id
+    } else {
+      // Create custom task (not template)
+      const { data: newTask } = await supabase
+        .from('tasks')
+        .insert({
+          user_id: user.id,
+          name: taskName,
+          category: 'custom',
+          is_template: false,
+        })
+        .select()
+        .single()
+      taskId = newTask?.id
+    }
+
+    // Log the task for this date
+    const { error } = await supabase.from('task_logs').insert({
+      user_id: user.id,
+      task_id: taskId,
+      date: dateStr,
+      completed: false,
+      count: 0,
+    })
+
+    if (!error) {
+      setSearchInput('')
+      setShowSearch(false)
+      // Refetch data
+      await fetchDateData(user.id, selectedDate, waterTaskId)
+    }
+  }
+
+  const changeDate = (days: number) => {
+    const newDate = new Date(selectedDate)
+    newDate.setDate(newDate.getDate() + days)
+    setSelectedDate(newDate)
+  }
+
+  const getDateDisplay = () => {
+    const day = selectedDate.toLocaleDateString('default', { weekday: 'short' })
+    const date = String(selectedDate.getDate()).padStart(2, '0')
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0')
+    return { day, date, month }
+  }
+
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
-  const completedTasks = todayTasks.filter(t => t.completed).length
-  const today = new Date().toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' })
+  const { day, date, month } = getDateDisplay()
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '700px', margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '24px', margin: 0 }}>Routine</h1>
-        <button onClick={handleLogout} style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', background: 'none', cursor: 'pointer', fontSize: '14px' }}>
-          Logout
-        </button>
-      </div>
-
-      {/* Navigation */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '2rem' }}>
-        <Link href="/water" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          💧 Water
-        </Link>
-        <Link href="/calendar" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Calendar
-        </Link>
-        <Link href="/templates" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Templates
-        </Link>
-        <Link href="/dashboard" style={{ padding: '0.5rem 1rem', border: '0.5px solid #d1d5db', borderRadius: '4px', textDecoration: 'none', color: '#3b82f6', fontSize: '12px', fontWeight: '500' }}>
-          Stats
-        </Link>
-      </div>
-
-      {/* Date & Progress */}
-      <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', marginBottom: '2rem', textAlign: 'center' }}>
-        <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>{today}</div>
-        <div style={{ fontSize: '12px', color: '#666', marginBottom: '0.5rem' }}>
-          {completedTasks} of {todayTasks.length} completed
-        </div>
-        <div style={{
-          width: '100%',
-          height: '6px',
-          background: '#e5e7eb',
-          borderRadius: '3px',
-          overflow: 'hidden',
-          marginTop: '0.5rem',
+    <div style={{ minHeight: '100vh', background: '#fafafa' }}>
+      {/* Top Navigation */}
+      <div style={{
+        display: 'flex',
+        borderBottom: '0.5px solid #e5e7eb',
+        background: '#ffffff',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+      }}>
+        <Link href="/" style={{
+          flex: 1,
+          padding: '12px',
+          borderBottom: '2px solid #3b82f6',
+          textDecoration: 'none',
+          textAlign: 'center',
+          fontSize: '13px',
+          fontWeight: '500',
+          color: '#000',
         }}>
-          <div style={{
-            height: '100%',
-            background: '#059669',
-            width: todayTasks.length > 0 ? `${(completedTasks / todayTasks.length) * 100}%` : '0%',
-          }} />
-        </div>
+          Home
+        </Link>
+        <Link href="/calendar" style={{
+          flex: 1,
+          padding: '12px',
+          textDecoration: 'none',
+          textAlign: 'center',
+          fontSize: '13px',
+          fontWeight: '500',
+          color: '#999',
+          borderBottom: '2px solid transparent',
+        }}>
+          📅 Calendar
+        </Link>
+        <Link href="/templates" style={{
+          flex: 1,
+          padding: '12px',
+          textDecoration: 'none',
+          textAlign: 'center',
+          fontSize: '13px',
+          fontWeight: '500',
+          color: '#999',
+          borderBottom: '2px solid transparent',
+        }}>
+          ⚙️ Templates
+        </Link>
+        <Link href="/dashboard" style={{
+          flex: 1,
+          padding: '12px',
+          textDecoration: 'none',
+          textAlign: 'center',
+          fontSize: '13px',
+          fontWeight: '500',
+          color: '#999',
+          borderBottom: '2px solid transparent',
+        }}>
+          📊 Stats
+        </Link>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
-        <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>Planned today</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{todayTasks.length}</div>
+      {/* Main content */}
+      <div style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
+        {/* Date Navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '2rem', justifyContent: 'center' }}>
+          <button
+            onClick={() => changeDate(-1)}
+            style={{
+              width: '32px',
+              height: '32px',
+              border: '0.5px solid #d1d5db',
+              background: '#fff',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ‹
+          </button>
+          <div style={{ textAlign: 'center', minWidth: '120px' }}>
+            <p style={{ fontSize: '12px', color: '#666', margin: '0' }}>{day}</p>
+            <p style={{ fontSize: '18px', fontWeight: '600', color: '#000', margin: '4px 0 0' }}>{date}/{month}</p>
+          </div>
+          <button
+            onClick={() => changeDate(1)}
+            style={{
+              width: '32px',
+              height: '32px',
+              border: '0.5px solid #d1d5db',
+              background: '#fff',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ›
+          </button>
         </div>
-        <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>This week</div>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#3b82f6' }}>{stats.completedThisWeek}</div>
+
+        {/* Water Intake */}
+        <div style={{ marginBottom: '2rem', padding: '1rem', background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: '8px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '1rem', color: '#0284c7' }}>💧 Water intake</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#0284c7' }}>{waterCount}/8</div>
+            <div style={{ flex: 1, height: '8px', background: '#dbeafe', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: '#0284c7', width: `${(waterCount / 8) * 100}%` }} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              onClick={removeWater}
+              disabled={waterCount === 0}
+              style={{
+                padding: '0.75rem',
+                background: waterCount === 0 ? '#f3f4f6' : '#fee2e2',
+                color: waterCount === 0 ? '#d1d5db' : '#991b1b',
+                border: waterCount === 0 ? '0.5px solid #e5e7eb' : '0.5px solid #fecaca',
+                borderRadius: '6px',
+                cursor: waterCount === 0 ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+              }}
+            >
+              − Remove
+            </button>
+            <button
+              onClick={addWater}
+              style={{
+                padding: '0.75rem',
+                background: '#0284c7',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+              }}
+            >
+              + Add cup
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Today's Tasks */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '14px', color: '#666', margin: '0 0 1rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '600' }}>
-          Today's tasks
-        </h2>
+        {/* Smart Add Task */}
+        <div style={{ marginBottom: '2rem' }}>
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value)
+              if (e.target.value) {
+                const filtered = templates.filter(t =>
+                  t.name.toLowerCase().includes(e.target.value.toLowerCase())
+                )
+                setFilteredTasks(filtered)
+              } else {
+                setFilteredTasks([])
+              }
+            }}
+            onFocus={() => setShowSearch(true)}
+            placeholder="+ Add task..."
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: '0.5px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '14px',
+            }}
+          />
 
-        {todayTasks.length === 0 ? (
-          <p style={{ color: '#999', fontSize: '13px', marginBottom: '1rem' }}>No tasks yet</p>
-        ) : (
-          todayTasks.map(task => {
-            const streak = streaks[task.task_id]
-            return (
+          {showSearch && (
+            <div style={{ marginTop: '8px', background: '#fff', border: '0.5px solid #d1d5db', borderRadius: '6px', overflow: 'hidden' }}>
+              {searchInput && (
+                <button
+                  onClick={() => {
+                    handleAddTask(searchInput)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: 'none',
+                    background: '#f3f4f6',
+                    borderBottom: '0.5px solid #d1d5db',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    color: '#3b82f6',
+                    fontWeight: '500',
+                    textAlign: 'left',
+                  }}
+                >
+                  + Create custom: {searchInput}
+                </button>
+              )}
+              {filteredTasks.map((task) => (
+                <button
+                  key={task.id}
+                  onClick={() => {
+                    handleAddTask(task.name)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: 'none',
+                    background: '#fff',
+                    borderBottom: '0.5px solid #e5e7eb',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    textAlign: 'left',
+                  }}
+                >
+                  {task.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Tasks */}
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Tasks ({dateTasksData.filter(t => t.completed).length}/{dateTasksData.length})</h2>
+          {dateTasksData.length === 0 ? (
+            <p style={{ fontSize: '13px', color: '#999', margin: '0' }}>No tasks planned for this day</p>
+          ) : (
+            dateTasksData.map((task) => (
               <div
                 key={task.task_id}
                 style={{
+                  padding: '12px',
+                  background: '#fff',
+                  border: '0.5px solid #e5e7eb',
+                  borderRadius: '6px',
+                  marginBottom: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
-                  padding: '1rem',
-                  background: task.completed ? '#f0fdf4' : '#f9fafb',
-                  border: '0.5px solid #e5e7eb',
-                  borderRadius: '8px',
-                  marginBottom: '8px',
                 }}
               >
                 <input
                   type="checkbox"
                   checked={task.completed}
-                  onChange={e => toggleTask(task.task_id, e.target.checked)}
-                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                  onChange={() => toggleTask(task.task_id, task.completed)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '500', fontSize: '14px' }}>{task.name}</div>
-                  <div style={{ fontSize: '11px', color: '#666' }}>{task.category || 'custom'}</div>
+                  <p style={{
+                    margin: '0',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: '#000',
+                    textDecoration: task.completed ? 'line-through' : 'none',
+                  }}>
+                    {task.name}
+                  </p>
+                  {task.is_template && streaks[task.task_id] && streaks[task.task_id].current_streak > 0 && (
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
+                      🔥 {streaks[task.task_id].current_streak}d
+                    </p>
+                  )}
                 </div>
-                {task.is_template && streak && streak.current_streak > 0 && (
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#059669' }}>
-                    🔥 {streak.current_streak}d
-                  </span>
-                )}
               </div>
-            )
-          })
-        )}
-      </div>
+            ))
+          )}
+        </div>
 
-      {/* Smart Add Task */}
-      <div style={{ marginBottom: '2rem' }}>
-        {!showSearch ? (
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
+          <div style={{ padding: '12px', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '6px', textAlign: 'center' }}>
+            <p style={{ fontSize: '11px', color: '#666', margin: '0 0 4px' }}>Completed</p>
+            <p style={{ fontSize: '18px', fontWeight: '600', color: '#000', margin: '0' }}>{dateTasksData.filter(t => t.completed).length}/{dateTasksData.length}</p>
+          </div>
+          <div style={{ padding: '12px', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '6px', textAlign: 'center' }}>
+            <p style={{ fontSize: '11px', color: '#666', margin: '0 0 4px' }}>This week</p>
+            <p style={{ fontSize: '18px', fontWeight: '600', color: '#3b82f6', margin: '0' }}>{stats.completedThisWeek}</p>
+          </div>
+        </div>
+
+        {/* Reflection */}
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Reflection</h2>
+          <textarea
+            value={reflection}
+            onChange={(e) => setReflection(e.target.value)}
+            placeholder="How was your day?"
+            style={{
+              width: '100%',
+              padding: '12px',
+              border: '0.5px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontFamily: 'inherit',
+              minHeight: '100px',
+              resize: 'vertical',
+              marginBottom: '8px',
+            }}
+          />
           <button
-            onClick={() => setShowSearch(true)}
+            onClick={saveReflection}
             style={{
               width: '100%',
               padding: '0.75rem',
-              background: '#3b82f6',
+              background: reflectionSaved ? '#10b981' : '#3b82f6',
               color: 'white',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '6px',
               cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500',
+              fontSize: '13px',
+              fontWeight: '600',
+              transition: 'background 0.3s',
             }}
           >
-            + Add task
+            {reflectionSaved ? '✓ Saved' : 'Save reflection'}
           </button>
-        ) : (
-          <div style={{ padding: '1rem', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '8px' }}>
-            <input
-              type="text"
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              placeholder="Search or create..."
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '0.5px solid #d1d5db',
-                borderRadius: '4px',
-                fontSize: '14px',
-                marginBottom: '0.5rem',
-              }}
-            />
+        </div>
 
-            {/* Results */}
-            {filteredTasks.length > 0 && (
-              <div style={{ marginBottom: '0.5rem' }}>
-                {filteredTasks.map(task => (
-                  <button
-                    key={task.id}
-                    onClick={() => handleAddTask(task.id)}
-                    style={{
-                      width: '100%',
-                      padding: '0.75rem',
-                      background: '#eff6ff',
-                      border: '0.5px solid #bfdbfe',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      textAlign: 'left',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span>{task.name}</span>
-                    {streaks[task.id] && (
-                      <span style={{ fontSize: '11px', color: '#059669', fontWeight: '600' }}>
-                        🔥 {streaks[task.id].current_streak}d
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Create Custom */}
-            {searchInput.trim().length > 0 && (
-              <button
-                onClick={() => handleAddTask('new', true)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: '#dcfce7',
-                  border: '0.5px solid #bbf7d0',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  color: '#166534',
-                  fontWeight: '500',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                + Create custom: {searchInput.trim()}
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                setShowSearch(false)
-                setSearchInput('')
-              }}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                background: '#fee2e2',
-                border: '0.5px solid #fecaca',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                color: '#991b1b',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Reflection */}
-      <div style={{
-        padding: '1rem',
-        background: '#eff6ff',
-        borderLeft: '3px solid #3b82f6',
-        borderRadius: '8px',
-      }}>
-        <label style={{ fontSize: '11px', color: '#0284c7', fontWeight: '600', marginBottom: '8px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          📝 Daily Reflection
-        </label>
-        <p style={{ fontSize: '13px', marginBottom: '1rem', color: '#0b0b0b' }}>
-          What's one thing you accomplished today?
-        </p>
-        <textarea
-          value={reflection}
-          onChange={e => setReflection(e.target.value)}
-          placeholder="Type here..."
-          style={{
-            width: '100%',
-            padding: '8px',
-            border: '0.5px solid #d1d5db',
-            borderRadius: '4px',
-            fontSize: '12px',
-            minHeight: '60px',
-            fontFamily: 'inherit',
-            marginBottom: '0.5rem',
-          }}
-        />
+        {/* Logout */}
         <button
-          onClick={saveReflection}
+          onClick={handleLogout}
           style={{
             width: '100%',
-            padding: '0.5rem',
-            background: reflectionSaved ? '#059669' : '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
+            padding: '12px',
+            background: '#fff',
+            border: '0.5px solid #d1d5db',
+            borderRadius: '6px',
             cursor: 'pointer',
-            fontSize: '12px',
+            fontSize: '13px',
+            color: '#dc2626',
             fontWeight: '600',
-            transition: 'background 0.3s',
           }}
         >
-          {reflectionSaved ? '✓ Saved' : 'Save Reflection'}
+          Logout
         </button>
       </div>
     </div>

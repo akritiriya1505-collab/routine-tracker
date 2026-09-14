@@ -16,16 +16,16 @@ interface TaskStats {
 interface DailyData {
   date: string
   dayName: string
-  count: number
+  planned: number
+  completed: number
 }
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
-    totalTasks: 0,
-    completedToday: 0,
-    completedThisWeek: 0,
-    completionRate: 0,
-    customTasksToday: 0,
+    bestDay: '',
+    bestDayCount: 0,
+    weekAverage: 0,
+    consistencyDays: 0,
   })
   const [taskStats, setTaskStats] = useState<TaskStats[]>([])
   const [dailyCompletion, setDailyCompletion] = useState<DailyData[]>([])
@@ -42,44 +42,62 @@ export default function Dashboard() {
       }
       setUser(authUser)
 
-      const today = new Date().toISOString().split('T')[0]
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      // Task stats
+      // Fetch all tasks
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('*')
         .eq('user_id', authUser.id)
 
-      const { data: todayLogs } = await supabase
-        .from('task_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .eq('date', today)
-        .eq('completed', true)
+      // Daily completion for last 7 days
+      const last7Days: DailyData[] = []
+      let totalCompleted = 0
+      let daysWithCompletions = 0
+      let bestDay = ''
+      let bestDayCount = 0
 
-      const { data: weekLogs } = await supabase
-        .from('task_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
-        .gte('date', weekAgo)
-        .eq('completed', true)
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+        const dateStr = date.toISOString().split('T')[0]
+        const dayName = date.toLocaleDateString('default', { weekday: 'short' })
+        
+        // Get all logs for this day
+        const { data: dayLogs } = await supabase
+          .from('task_logs')
+          .select('*')
+          .eq('user_id', authUser.id)
+          .eq('date', dateStr)
 
-      const { data: allLogs } = await supabase
-        .from('task_logs')
-        .select('*')
-        .eq('user_id', authUser.id)
+        const completed = dayLogs?.filter(l => l.completed).length || 0
+        const planned = dayLogs?.length || 0
 
-      const completedCount = allLogs?.filter(l => l.completed).length || 0
-      const totalCount = allLogs?.length || 0
+        totalCompleted += completed
+        if (completed > 0) daysWithCompletions += 1
+
+        if (completed > bestDayCount) {
+          bestDayCount = completed
+          bestDay = dayName
+        }
+
+        last7Days.push({
+          date: dateStr,
+          dayName: dayName,
+          planned: planned,
+          completed: completed,
+        })
+      }
+
+      const weekAverage = totalCompleted > 0 ? Math.round(totalCompleted / 7) : 0
 
       setStats({
-        totalTasks: allTasks?.length || 0,
-        completedToday: todayLogs?.length || 0,
-        completedThisWeek: weekLogs?.length || 0,
-        completionRate: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
-        customTasksToday: 0,
+        bestDay,
+        bestDayCount,
+        weekAverage,
+        consistencyDays: daysWithCompletions,
       })
+
+      setDailyCompletion(last7Days)
 
       // Task stats (templates only)
       const { data: templates } = await supabase
@@ -117,30 +135,8 @@ export default function Dashboard() {
           })
         }
 
-        setTaskStats(taskStatsArray)
+        setTaskStats(taskStatsArray.sort((a, b) => b.thisWeek - a.thisWeek))
       }
-
-      // Daily completion for last 7 days
-      const last7Days: DailyData[] = []
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-        const dateStr = date.toISOString().split('T')[0]
-        const dayName = date.toLocaleDateString('default', { weekday: 'short' })
-        
-        const { data: dayLogs } = await supabase
-          .from('task_logs')
-          .select('*')
-          .eq('user_id', authUser.id)
-          .eq('date', dateStr)
-          .eq('completed', true)
-
-        last7Days.push({
-          date: dateStr,
-          dayName: dayName,
-          count: dayLogs?.length || 0,
-        })
-      }
-      setDailyCompletion(last7Days)
 
       setLoading(false)
     }
@@ -150,7 +146,7 @@ export default function Dashboard() {
 
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
-  const maxDaily = Math.max(...dailyCompletion.map(d => d.count), 1)
+  const maxDaily = Math.max(...dailyCompletion.map(d => Math.max(d.planned, d.completed)), 1)
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: '700px', margin: '0 auto' }}>
@@ -159,17 +155,84 @@ export default function Dashboard() {
         <Link href="/" style={{ color: '#3b82f6', textDecoration: 'none' }}>Back</Link>
       </div>
 
-      {/* Task Overview */}
-      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Task Overview</h2>
+      {/* Weekly Insights - Creative Cards */}
+      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>This Week's Insights</h2>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
-        <StatCard label="Total tasks" value={stats.totalTasks} />
-        <StatCard label="Completed today" value={stats.completedToday} />
-        <StatCard label="This week" value={stats.completedThisWeek} />
-        <StatCard label="Completion rate" value={stats.completionRate + '%'} />
+        {/* Best Day */}
+        <div style={{
+          padding: '1rem',
+          background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '4px' }}>🏆 Best Day</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '4px' }}>
+            {stats.bestDay || 'N/A'}
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.8 }}>
+            {stats.bestDayCount} tasks
+          </div>
+        </div>
+
+        {/* Consistency */}
+        <div style={{
+          padding: '1rem',
+          background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '4px' }}>📅 Active Days</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '4px' }}>
+            {stats.consistencyDays}/7
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.8 }}>
+            days with tasks
+          </div>
+        </div>
+
+        {/* Weekly Average */}
+        <div style={{
+          padding: '1rem',
+          background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '4px' }}>📊 Daily Average</div>
+          <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '4px' }}>
+            {stats.weekAverage}
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.8 }}>
+            tasks per day
+          </div>
+        </div>
+
+        {/* Streak Champion */}
+        <div style={{
+          padding: '1rem',
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '11px', opacity: 0.9, marginBottom: '4px' }}>🔥 Top Habit</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
+            {taskStats.length > 0 ? taskStats[0].taskName : 'No data'}
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.8' }}>
+            {taskStats.length > 0 ? `${taskStats[0].thisWeek}x this week` : ''}
+          </div>
+        </div>
       </div>
 
-      {/* Daily Completion Chart - IMPROVED */}
-      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Last 7 Days Activity</h2>
+      {/* Planned vs Completed Chart */}
+      <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Planned vs Completed</h2>
       <div style={{
         padding: '2rem 1rem',
         background: '#f9fafb',
@@ -181,47 +244,41 @@ export default function Dashboard() {
         <div style={{
           display: 'flex',
           alignItems: 'flex-end',
-          gap: '12px',
-          height: '200px',
-          marginBottom: '1rem',
+          gap: '16px',
+          height: '220px',
+          marginBottom: '2rem',
           justifyContent: 'space-around',
         }}>
           {dailyCompletion.map((day, i) => (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
-              {/* Bar */}
-              <div
-                style={{
-                  width: '100%',
-                  background: day.count > 0 ? '#3b82f6' : '#e5e7eb',
-                  borderRadius: '4px 4px 0 0',
-                  height: maxDaily > 0 ? `${(day.count / maxDaily) * 150}px` : '4px',
-                  minHeight: day.count > 0 ? '4px' : '2px',
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  justifyContent: 'center',
-                  paddingBottom: '4px',
-                  position: 'relative',
-                }}
-              >
-                {/* Count on top of bar */}
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  color: day.count > 0 ? 'white' : '#666',
-                  position: 'absolute',
-                  top: '-18px',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {day.count}
-                </div>
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '4px' }}>
+              {/* Bars container */}
+              <div style={{ display: 'flex', gap: '3px', height: '160px', alignItems: 'flex-end' }}>
+                {/* Planned bar (light gray) */}
+                <div
+                  style={{
+                    flex: 1,
+                    background: '#d1d5db',
+                    borderRadius: '3px 3px 0 0',
+                    height: maxDaily > 0 ? `${(day.planned / maxDaily) * 160}px` : '2px',
+                    minHeight: day.planned > 0 ? '2px' : '0px',
+                  }}
+                />
+                {/* Completed bar (blue) */}
+                <div
+                  style={{
+                    flex: 1,
+                    background: '#3b82f6',
+                    borderRadius: '3px 3px 0 0',
+                    height: maxDaily > 0 ? `${(day.completed / maxDaily) * 160}px` : '2px',
+                    minHeight: day.completed > 0 ? '2px' : '0px',
+                  }}
+                />
               </div>
-              {/* Day label */}
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '8px', fontWeight: '500' }}>
-                {day.dayName}
-              </div>
-              {/* Date */}
-              <div style={{ fontSize: '9px', color: '#999', marginTop: '2px' }}>
-                {new Date(day.date).getDate()}
+
+              {/* Labels */}
+              <div style={{ textAlign: 'center', width: '100%', fontSize: '9px' }}>
+                <div style={{ color: '#666', fontWeight: '600' }}>{day.dayName}</div>
+                <div style={{ color: '#999', fontSize: '8px' }}>P:{day.planned} C:{day.completed}</div>
               </div>
             </div>
           ))}
@@ -229,44 +286,31 @@ export default function Dashboard() {
 
         {/* Legend */}
         <div style={{
+          display: 'flex',
+          gap: '2rem',
+          justifyContent: 'center',
           padding: '1rem',
           background: 'white',
+          borderRadius: '4px',
           border: '0.5px solid #e5e7eb',
-          borderRadius: '4px',
-          marginTop: '1rem',
         }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '0.5rem', color: '#666' }}>
-            📊 What This Shows:
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+            <div style={{ width: '12px', height: '12px', background: '#d1d5db', borderRadius: '2px' }} />
+            <span>Planned</span>
           </div>
-          <ul style={{ margin: '0', paddingLeft: '1.2rem', fontSize: '12px', lineHeight: '1.6', color: '#555' }}>
-            <li>Each bar = tasks completed that day</li>
-            <li>Height = number of completed tasks</li>
-            <li>Number on top = exact count</li>
-            <li>Blue = completed tasks</li>
-            <li>Gray = no tasks completed</li>
-          </ul>
-        </div>
-
-        {/* Example */}
-        <div style={{
-          padding: '1rem',
-          background: '#eff6ff',
-          border: '0.5px solid #bfdbfe',
-          borderRadius: '4px',
-          marginTop: '1rem',
-          fontSize: '12px',
-          color: '#0284c7',
-        }}>
-          💡 <strong>Example:</strong> If Monday shows "5", you completed 5 tasks that day
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+            <div style={{ width: '12px', height: '12px', background: '#3b82f6', borderRadius: '2px' }} />
+            <span>Completed</span>
+          </div>
         </div>
       </div>
 
-      {/* Habits Insights */}
+      {/* Habits Performance */}
       {taskStats.length > 0 && (
         <>
           <h2 style={{ fontSize: '16px', marginBottom: '1rem', fontWeight: '600' }}>Habits Insights</h2>
           <div style={{ display: 'grid', gap: '12px', marginBottom: '2rem' }}>
-            {taskStats.map(task => (
+            {taskStats.slice(0, 5).map((task, index) => (
               <div
                 key={task.taskId}
                 style={{
@@ -276,8 +320,11 @@ export default function Dashboard() {
                   borderRadius: '8px',
                 }}
               >
-                <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '0.75rem' }}>
-                  {task.taskName}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '18px' }}>{index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '⭐'}</span>
+                  <div style={{ fontWeight: '600', fontSize: '14px', flex: 1 }}>
+                    {task.taskName}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '12px' }}>
                   <div>
@@ -287,13 +334,13 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div>
-                    <div style={{ color: '#666', marginBottom: '2px' }}>Current streak</div>
+                    <div style={{ color: '#666', marginBottom: '2px' }}>Current 🔥</div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#059669' }}>
                       {task.currentStreak}d
                     </div>
                   </div>
                   <div>
-                    <div style={{ color: '#666', marginBottom: '2px' }}>Best streak</div>
+                    <div style={{ color: '#666', marginBottom: '2px' }}>Best ever</div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#7c3aed' }}>
                       {task.longestStreak}d
                     </div>
@@ -321,21 +368,6 @@ export default function Dashboard() {
       >
         Back to tasks
       </Link>
-    </div>
-  )
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div style={{
-      padding: '1rem',
-      background: '#f9fafb',
-      border: '0.5px solid #e5e7eb',
-      borderRadius: '8px',
-      textAlign: 'center',
-    }}>
-      <div style={{ fontSize: '12px', color: '#666', marginBottom: '0.5rem' }}>{label}</div>
-      <div style={{ fontSize: '24px', fontWeight: '600', color: '#3b82f6' }}>{value}</div>
     </div>
   )
 }

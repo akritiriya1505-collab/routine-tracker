@@ -404,10 +404,11 @@ export default function Home() {
   const { day, date, month } = getDateDisplay()
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fafafa' }}>
+    <div style={{ background: '#fafafa', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top Navigation */}
       <div style={{
-        display: 'flex',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
         borderBottom: '0.5px solid #e5e7eb',
         background: '#ffffff',
         position: 'sticky',
@@ -415,59 +416,67 @@ export default function Home() {
         zIndex: 100,
       }}>
         <Link href="/" style={{
-          flex: 1,
-          padding: '12px',
+          padding: '12px 8px',
           borderBottom: '2px solid #3b82f6',
           textDecoration: 'none',
           textAlign: 'center',
           fontSize: '13px',
           fontWeight: '500',
           color: '#000',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           Home
         </Link>
         <Link href="/calendar" style={{
-          flex: 1,
-          padding: '12px',
+          padding: '12px 8px',
           textDecoration: 'none',
           textAlign: 'center',
           fontSize: '13px',
           fontWeight: '500',
           color: '#999',
           borderBottom: '2px solid transparent',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           📅 Calendar
         </Link>
         <Link href="/templates" style={{
-          flex: 1,
-          padding: '12px',
+          padding: '12px 8px',
           textDecoration: 'none',
           textAlign: 'center',
           fontSize: '13px',
           fontWeight: '500',
           color: '#999',
           borderBottom: '2px solid transparent',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           ⚙️ Templates
         </Link>
         <Link href="/dashboard" style={{
-          flex: 1,
-          padding: '12px',
+          padding: '12px 8px',
           textDecoration: 'none',
           textAlign: 'center',
           fontSize: '13px',
           fontWeight: '500',
           color: '#999',
           borderBottom: '2px solid transparent',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           📊 Stats
         </Link>
       </div>
 
       {/* Main content */}
-      <div style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
+      <div style={{ padding: '12px', flex: 1, overflow: 'auto' }}>
         {/* Date Navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '2rem', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
             onClick={() => changeDate(-1)}
             style={{
@@ -509,7 +518,7 @@ export default function Home() {
         </div>
 
         {/* Water Intake */}
-        <div style={{ marginBottom: '2rem', padding: '1rem', background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: '8px' }}>
+        <div style={{ marginBottom: '1.5rem', padding: '12px', background: '#eff6ff', border: '0.5px solid #bfdbfe', borderRadius: '8px', overflow: 'hidden' }}>
           <div style={{ fontSize: '14px', fontWeight: '600', marginBottom: '1rem', color: '#0284c7' }}>💧 Water intake</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1rem' }}>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#0284c7' }}>{waterCount}/8</div>
@@ -553,7 +562,7 @@ export default function Home() {
         </div>
 
         {/* Smart Add Task */}
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '1.5rem' }}>
           <input
             type="text"
             value={searchInput}
@@ -628,7 +637,7 @@ export default function Home() {
         </div>
 
         {/* Tasks */}
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '1.5rem', overflow: 'hidden' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Tasks ({dateTasksData.filter(t => t.completed && t.name.toLowerCase() !== 'water').length}/{dateTasksData.filter(t => t.name.toLowerCase() !== 'water').length})</h2>
           {dateTasksData.filter(t => t.name.toLowerCase() !== 'water').length === 0 ? (
             <p style={{ fontSize: '13px', color: '#999', margin: '0' }}>No tasks planned for this day</p>
@@ -675,7 +684,7 @@ export default function Home() {
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '1.5rem' }}>
           <div style={{ padding: '12px', background: '#f9fafb', border: '0.5px solid #e5e7eb', borderRadius: '6px', textAlign: 'center' }}>
             <p style={{ fontSize: '11px', color: '#666', margin: '0 0 4px' }}>Completed</p>
             <p style={{ fontSize: '18px', fontWeight: '600', color: '#000', margin: '0' }}>{dateTasksData.filter(t => t.completed).length}/{dateTasksData.length}</p>
@@ -687,7 +696,7 @@ export default function Home() {
         </div>
 
         {/* Reflection */}
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '1rem' }}>
           <h2 style={{ fontSize: '14px', fontWeight: '600', color: '#666', margin: '0 0 12px' }}>Reflection</h2>
           <textarea
             value={reflection}

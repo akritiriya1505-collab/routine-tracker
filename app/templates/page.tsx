@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { Sidebar } from './components/sidebar'
 
 interface Task {
   id: string
@@ -102,7 +103,25 @@ export default function Templates() {
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ background: '#fafafa', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <Sidebar />
+
+      <style>{`
+        @media (min-width: 768px) {
+          .main-content {
+            margin-left: 200px !important;
+          }
+        }
+        @media (max-width: 767px) {
+          .main-content {
+            margin-left: 0 !important;
+            margin-top: 40px;
+          }
+        }
+      `}</style>
+
+      <div className="main-content" style={{ padding: '12px', flex: 1, overflow: 'auto' }}>
+      <div style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h1 style={{ fontSize: '24px', margin: 0 }}>Task templates</h1>
         <Link href="/" style={{ color: '#3b82f6', textDecoration: 'none' }}>Back</Link>
@@ -218,6 +237,8 @@ export default function Templates() {
           Create template
         </button>
       </form>
+    </div>
+      </div>
     </div>
   )
 }

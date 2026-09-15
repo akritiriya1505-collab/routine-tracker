@@ -53,15 +53,13 @@ export function Sidebar() {
     <>
       {/* Mobile Hamburger */}
       <div style={{
-        display: 'none',
-        '@media (max-width: 767px)': {
-          display: 'block',
-        },
         position: 'fixed',
         top: '16px',
         left: '16px',
         zIndex: 1000,
-      }}>
+      }}
+      className="hamburger-button"
+      >
         <button
           onClick={() => setIsOpen(!isOpen)}
           style={{
@@ -88,7 +86,6 @@ export function Sidebar() {
             inset: 0,
             background: 'rgba(0, 0, 0, 0.5)',
             zIndex: 999,
-            display: 'none',
           }}
           className="mobile-overlay"
         />
@@ -107,7 +104,6 @@ export function Sidebar() {
           zIndex: 1001,
           transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 0.3s ease',
-          display: 'flex',
           flexDirection: 'column',
           paddingTop: '16px',
         }}
@@ -121,7 +117,6 @@ export function Sidebar() {
       {/* Desktop Sidebar */}
       <div
         style={{
-          display: 'none',
           position: 'fixed',
           left: 0,
           top: 0,
@@ -139,7 +134,26 @@ export function Sidebar() {
       </div>
 
       <style>{`
+        .mobile-drawer {
+          display: none !important;
+        }
+        
+        .mobile-overlay {
+          display: none !important;
+        }
+        
+        .hamburger-button {
+          display: none;
+        }
+        
+        .desktop-sidebar {
+          display: none !important;
+        }
+        
         @media (max-width: 767px) {
+          .hamburger-button {
+            display: block !important;
+          }
           .mobile-overlay {
             display: block !important;
           }

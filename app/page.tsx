@@ -46,13 +46,30 @@ export default function Home() {
 
   // Fetch data when date changes
   useEffect(() => {
-    const init = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (!authUser) {
+    // Listen for auth state changes instead of just checking once
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!session) {
+        // No session after auth state change - redirect to login
         router.push('/login')
         return
       }
-      setUser(authUser)
+
+      // Session exists, initialize app
+      await initializeApp(session.user)
+    })
+
+    return () => subscription?.unsubscribe()
+  }, [router])
+
+  // Fetch data when selected date changes
+  useEffect(() => {
+    if (user && waterTaskId && allTasks.length > 0) {
+      fetchDateData(user.id, selectedDate, waterTaskId, allTasks)
+    }
+  }, [selectedDate, user, waterTaskId, allTasks])
+
+  const initializeApp = async (authUser: any) => {
+    setUser(authUser)
 
       // Get all tasks (both templates and custom)
       const { data: allTasksData } = await supabase
@@ -83,13 +100,7 @@ export default function Home() {
       }
 
       setWaterTaskId(waterId)
-
-      // Fetch data for selected date (use allTasksData which includes both templates and custom tasks)
-      await fetchDateData(authUser.id, selectedDate, waterId, allTasksData || [])
-    }
-
-    init()
-  }, [selectedDate, router])
+  }
 
   const fetchDateData = async (userId: string, date: Date, waterId: string, allTasks: Task[]) => {
     const dateStr = date.toISOString().split('T')[0]

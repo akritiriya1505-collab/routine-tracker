@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { Sidebar } from './components/sidebar'
+import { Sidebar } from '@/components/sidebar'
 
 interface Task {
   id: string

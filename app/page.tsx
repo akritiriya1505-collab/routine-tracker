@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { logout } from '@/lib/auth'
 import Link from 'next/link'
+import { Sidebar } from '@/components/sidebar'
 
 interface Task {
   id: string
@@ -405,76 +406,25 @@ export default function Home() {
 
   return (
     <div style={{ background: '#fafafa', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Navigation */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        borderBottom: '0.5px solid #e5e7eb',
-        background: '#ffffff',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-      }}>
-        <Link href="/" style={{
-          padding: '12px 8px',
-          borderBottom: '2px solid #3b82f6',
-          textDecoration: 'none',
-          textAlign: 'center',
-          fontSize: '13px',
-          fontWeight: '500',
-          color: '#000',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          Home
-        </Link>
-        <Link href="/calendar" style={{
-          padding: '12px 8px',
-          textDecoration: 'none',
-          textAlign: 'center',
-          fontSize: '13px',
-          fontWeight: '500',
-          color: '#999',
-          borderBottom: '2px solid transparent',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          📅 Calendar
-        </Link>
-        <Link href="/templates" style={{
-          padding: '12px 8px',
-          textDecoration: 'none',
-          textAlign: 'center',
-          fontSize: '13px',
-          fontWeight: '500',
-          color: '#999',
-          borderBottom: '2px solid transparent',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          ⚙️ Templates
-        </Link>
-        <Link href="/dashboard" style={{
-          padding: '12px 8px',
-          textDecoration: 'none',
-          textAlign: 'center',
-          fontSize: '13px',
-          fontWeight: '500',
-          color: '#999',
-          borderBottom: '2px solid transparent',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          📊 Stats
-        </Link>
-      </div>
+      <Sidebar />
+
+      {/* Desktop spacer for sidebar */}
+      <style>{`
+        @media (min-width: 768px) {
+          .main-content {
+            margin-left: 200px !important;
+          }
+        }
+        @media (max-width: 767px) {
+          .main-content {
+            margin-left: 0 !important;
+            margin-top: 40px;
+          }
+        }
+      `}</style>
 
       {/* Main content */}
-      <div style={{ padding: '12px', flex: 1, overflow: 'auto' }}>
+      <div className="main-content" style={{ padding: '12px', flex: 1, overflow: 'auto' }}>
         {/* Date Navigation */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
